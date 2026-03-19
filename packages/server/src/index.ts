@@ -9,7 +9,9 @@ import { policyRoutes } from './routes/policies'
 import { sessionRoutes } from './routes/sessions'
 import { discussionRoutes } from './routes/discussions'
 import { canvasRoutes } from './routes/canvas'
+import { approvalRoutes } from './routes/approvals'
 import { ProcessManager } from './engine/process-manager'
+import { ApprovalManager } from './engine/approval-manager'
 import { registerSocketHandlers } from './socket/handlers'
 
 const PORT = parseInt(process.env.PORT ?? '3001', 10)
@@ -17,15 +19,16 @@ const UI_ORIGIN = process.env.UI_ORIGIN ?? 'http://localhost:3000'
 
 async function main() {
   const processManager = new ProcessManager()
+  const approvalManager = new ApprovalManager()
 
   // [G2] Prerequisites validation
   const prereqs = await checkPrerequisites()
   if (!prereqs.allPassed) {
-    console.error('\n⚠ Prerequisites check failed:')
+    console.error('\n Prerequisites check failed:')
     for (const failure of prereqs.failures) {
-      console.error(`  ✗ ${failure.name}: ${failure.message}`)
+      console.error(`  x ${failure.name}: ${failure.message}`)
       if (failure.fix) {
-        console.error(`    → Fix: ${failure.fix}`)
+        console.error(`    -> Fix: ${failure.fix}`)
       }
     }
     if (prereqs.critical) {
@@ -46,6 +49,7 @@ async function main() {
   await app.register(sessionRoutes)
   await app.register(discussionRoutes)
   await app.register(canvasRoutes)
+  await app.register(approvalRoutes(approvalManager))
 
   // Health check
   app.get('/api/health', async () => ({
@@ -57,6 +61,7 @@ async function main() {
       engine: {
         runningAgents: processManager.getRunningCount(),
         queuedAgents: processManager.getQueuedCount(),
+        pendingApprovals: approvalManager.getPendingCount(),
       },
     },
   }))
@@ -75,11 +80,31 @@ async function main() {
   })
 
   // Register Claude Code engine socket handlers
-  registerSocketHandlers(io, processManager)
+  registerSocketHandlers(io, processManager, approvalManager)
+
+  // Watchdog: auto-reject expired approvals every 10 s
+  const approvalWatchdog = setInterval(() => {
+    const expired = approvalManager.cleanupExpired()
+    for (const approval of expired) {
+      app.log.warn(
+        { approvalId: approval.id, agentId: approval.agentId },
+        'Approval timed out — auto-rejected',
+      )
+      io.emit('agent:error', {
+        agentId: approval.agentId,
+        sessionId: approval.sessionId,
+        error: 'Approval request expired — no response received within the timeout.',
+        type: 'APPROVAL_TIMEOUT',
+      })
+      io.emit('agent:status', { agentId: approval.agentId, status: 'idle' })
+    }
+  }, 10_000)
+  approvalWatchdog.unref?.()
 
   // Graceful shutdown [G6]
   const shutdown = async () => {
     app.log.info('Shutting down gracefully...')
+    clearInterval(approvalWatchdog)
     processManager.stopAll()
     io.close()
     await app.close()
@@ -90,7 +115,7 @@ async function main() {
   process.on('SIGTERM', shutdown)
 
   await app.listen({ port: PORT, host: '0.0.0.0' })
-  console.log(`\n🎵 Orchestra server running on http://localhost:${PORT}`)
+  console.log(`\nOrchestra server running on http://localhost:${PORT}`)
   console.log(`   Accepting connections from ${UI_ORIGIN}\n`)
 }
 

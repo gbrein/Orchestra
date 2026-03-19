@@ -1,10 +1,44 @@
 'use client'
 
+import { useRef, useState } from 'react'
 import { Music, Bell, Settings, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { NotificationPanel } from '@/components/shell/notification-panel'
+import type { OrchestraNotification } from '@/hooks/use-notifications'
 
-export function TopBar() {
+// ─── Types ─────────────────────────────────────────────────────────────────
+
+export interface TopBarProps {
+  readonly notifications?: readonly OrchestraNotification[]
+  readonly unreadCount?: number
+  readonly onAcknowledge?: (id: string) => void
+  readonly onAcknowledgeAll?: () => void
+  readonly onRemoveNotification?: (id: string) => void
+  readonly onReviewApproval?: (notification: OrchestraNotification) => void
+}
+
+// ─── TopBar ────────────────────────────────────────────────────────────────
+
+export function TopBar({
+  notifications = [],
+  unreadCount = 0,
+  onAcknowledge,
+  onAcknowledgeAll,
+  onRemoveNotification,
+  onReviewApproval,
+}: TopBarProps) {
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false)
+  const bellButtonRef = useRef<HTMLButtonElement>(null)
+
+  function toggleNotificationPanel() {
+    setNotificationPanelOpen((prev) => !prev)
+  }
+
+  function closeNotificationPanel() {
+    setNotificationPanelOpen(false)
+  }
+
   return (
     <header className="flex h-12 shrink-0 items-center justify-between border-b bg-card px-4">
       {/* Left: Logo + Workspace name */}
@@ -32,15 +66,46 @@ export function TopBar() {
 
       {/* Right: Notifications + Settings */}
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" className="relative h-8 w-8 p-0" aria-label="Notifications">
-          <Bell className="h-4 w-4" />
-          <Badge
-            variant="destructive"
-            className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center p-0 text-[10px]"
+        {/* Bell icon with notification panel */}
+        <div className="relative">
+          <Button
+            ref={bellButtonRef}
+            variant="ghost"
+            size="sm"
+            className="relative h-8 w-8 p-0"
+            aria-label={
+              unreadCount > 0
+                ? `Notifications, ${unreadCount} unread`
+                : 'Notifications'
+            }
+            aria-expanded={notificationPanelOpen}
+            aria-haspopup="true"
+            onClick={toggleNotificationPanel}
           >
-            0
-          </Badge>
-        </Button>
+            <Bell className="h-4 w-4" aria-hidden />
+            {unreadCount > 0 && (
+              <Badge
+                variant="destructive"
+                className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center p-0 text-[10px]"
+                aria-hidden
+              >
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </Badge>
+            )}
+          </Button>
+
+          <NotificationPanel
+            open={notificationPanelOpen}
+            onClose={closeNotificationPanel}
+            notifications={notifications}
+            unreadCount={unreadCount}
+            onAcknowledge={onAcknowledge ?? (() => undefined)}
+            onAcknowledgeAll={onAcknowledgeAll ?? (() => undefined)}
+            onRemove={onRemoveNotification ?? (() => undefined)}
+            onReviewApproval={onReviewApproval}
+          />
+        </div>
+
         <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label="Settings">
           <Settings className="h-4 w-4" />
         </Button>

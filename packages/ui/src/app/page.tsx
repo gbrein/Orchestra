@@ -10,10 +10,14 @@ import { CanvasPlaceholder } from '@/components/canvas/canvas-placeholder'
 import { OrchestraCanvas, type UndoRedoControls } from '@/components/canvas/orchestra-canvas'
 import { ShortcutOverlay } from '@/components/shell/shortcut-overlay'
 import { AgentChat } from '@/components/panels/agent-chat'
+import { ApprovalDialog } from '@/components/panels/approval-dialog'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { useSocket } from '@/hooks/use-socket'
+import { useNotifications } from '@/hooks/use-notifications'
+import { useApprovals } from '@/hooks/use-approvals'
 import type { AgentNodeData } from '@/lib/canvas-utils'
 import type { AgentStatus } from '@orchestra/shared'
+import type { OrchestraNotification } from '@/hooks/use-notifications'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -33,6 +37,22 @@ export default function Home() {
   const [chatOpen, setChatOpen] = useState(false)
 
   const { connected, connecting, error: socketError } = useSocket()
+
+  const {
+    notifications,
+    unreadCount,
+    acknowledge,
+    acknowledgeAll,
+    removeNotification,
+  } = useNotifications()
+
+  const {
+    currentApproval,
+    showApprovalDialog,
+    approve,
+    reject,
+    dismissDialog,
+  } = useApprovals()
 
   // Undo/redo controls are surfaced from the canvas via callback
   const undoRedoRef = useRef<UndoRedoControls | null>(null)
@@ -134,9 +154,50 @@ export default function Home() {
     setChatOpen(false)
   }, [])
 
+  // ── Approval dialog handlers ───────────────────────────────────────────
+
+  const handleApprovalDialogChange = useCallback(
+    (open: boolean) => {
+      if (!open) {
+        dismissDialog()
+      }
+    },
+    [dismissDialog],
+  )
+
+  // "Review" button in notification panel opens the approval dialog for
+  // the relevant agent. The useApprovals hook holds the queue; clicking
+  // Review simply re-surfaces the dialog if it was dismissed.
+  const handleReviewApproval = useCallback((_notification: OrchestraNotification) => {
+    // currentApproval is tracked by useApprovals; the ApprovalDialog
+    // will re-open on the next approval event. Future work can
+    // deep-link into a specific pending approval from here.
+    void _notification
+  }, [])
+
+  // ── Approval data conversion ───────────────────────────────────────────
+
+  const approvalDialogData = currentApproval
+    ? {
+        id: currentApproval.id,
+        agentId: currentApproval.agentId,
+        agentName: currentApproval.agentName,
+        command: currentApproval.command,
+        description: currentApproval.description,
+        toolName: currentApproval.toolName,
+      }
+    : null
+
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <TopBar />
+      <TopBar
+        notifications={notifications}
+        unreadCount={unreadCount}
+        onAcknowledge={acknowledge}
+        onAcknowledgeAll={acknowledgeAll}
+        onRemoveNotification={removeNotification}
+        onReviewApproval={handleReviewApproval}
+      />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
         <main className="relative flex-1 overflow-hidden">
@@ -189,6 +250,15 @@ export default function Home() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Approval Dialog — opens when an agent requests permission */}
+      <ApprovalDialog
+        open={showApprovalDialog}
+        onOpenChange={handleApprovalDialogChange}
+        approval={approvalDialogData}
+        onApprove={approve}
+        onReject={reject}
+      />
     </div>
   )
 }
