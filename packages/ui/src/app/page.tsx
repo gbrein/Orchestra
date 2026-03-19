@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Node, Edge } from '@xyflow/react'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { Sidebar } from '@/components/shell/sidebar'
@@ -12,6 +12,7 @@ import { TemplateGallery } from '@/components/canvas/template-gallery'
 import { CommandPalette } from '@/components/shell/command-palette'
 import type { CreateAgentInput } from '@orchestra/shared'
 import { createAgentNode } from '@/lib/canvas-utils'
+import { apiPost } from '@/lib/api'
 import { OrchestraCanvas, type UndoRedoControls } from '@/components/canvas/orchestra-canvas'
 import { ShortcutOverlay } from '@/components/shell/shortcut-overlay'
 import { AgentChat } from '@/components/panels/agent-chat'
@@ -27,10 +28,12 @@ import { ChainConfig, type ChainStep, type ConditionalEdge } from '@/components/
 import { PrdEditor, type PrdData } from '@/components/panels/prd-editor'
 import { AssistantsList, type AssistantSummary } from '@/components/panels/assistants-list'
 import { GlobalSafetyPanel } from '@/components/panels/global-safety-panel'
+import { AgentDrawer } from '@/components/panels/agent-drawer'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
-import { ComplexityContext, getComplexityFromStorage, type ComplexityContextValue } from '@/hooks/use-complexity'
+import { ComplexityContext, useComplexityState } from '@/hooks/use-complexity'
 import { useSocket } from '@/hooks/use-socket'
+import { useCanvasPersistence } from '@/hooks/use-canvas-persistence'
 import { useNotifications } from '@/hooks/use-notifications'
 import { useApprovals } from '@/hooks/use-approvals'
 import type { AgentNodeData } from '@/lib/canvas-utils'
@@ -42,6 +45,8 @@ import type { OrchestraNotification } from '@/hooks/use-notifications'
 interface SelectedAgent {
   readonly id: string
   readonly name: string
+  readonly description?: string
+  readonly purpose?: string
   readonly status: AgentStatus
   readonly model?: string
 }
@@ -54,6 +59,7 @@ export default function Home() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [selectedAgent, setSelectedAgent] = useState<SelectedAgent | null>(null)
   const [chatOpen, setChatOpen] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const [marketplaceOpen, setMarketplaceOpen] = useState(false)
   const [discussionWizardOpen, setDiscussionWizardOpen] = useState(false)
   const [selectedDiscussion, setSelectedDiscussion] = useState<DiscussionTable | null>(null)
@@ -85,13 +91,13 @@ export default function Home() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
 
   const [zoomLevel, setZoomLevel] = useState(100)
-  const [complexity, setComplexity] = useState<ComplexityContextValue>(() => getComplexityFromStorage())
+  const { value: complexity, refresh: refreshComplexity } = useComplexityState()
+  const { loaded: canvasLoaded, saving: canvasSaving, lastSavedAt, loadCanvas, saveCanvas } = useCanvasPersistence()
 
-  // Re-read complexity when settings panel closes
   const handleSettingsClose = useCallback((open: boolean) => {
     setSettingsOpen(open)
-    if (!open) setComplexity(getComplexityFromStorage())
-  }, [])
+    if (!open) refreshComplexity()
+  }, [refreshComplexity])
 
   const { connected, connecting, error: socketError } = useSocket()
 
@@ -142,6 +148,19 @@ export default function Home() {
     }, 100)
   }, [])
 
+  // Load canvas from DB on mount
+  const loadedRef = useRef(false)
+  useEffect(() => {
+    if (loadedRef.current) return
+    loadedRef.current = true
+    void loadCanvas().then((data) => {
+      if (data) {
+        setNodes(data.nodes)
+        setEdges(data.edges)
+      }
+    })
+  }, [loadCanvas])
+
   const showCanvas = nodes.length > 0
 
   const runningAgentCount = nodes.filter(
@@ -185,26 +204,89 @@ export default function Home() {
     setTemplateGalleryOpen(true)
   }, [])
 
-  const handleAgentCreated = useCallback((input: CreateAgentInput) => {
-    const node = createAgentNode(
-      { x: 300 + Math.random() * 200, y: 200 + Math.random() * 200 },
-      {
+  const handleAgentCreated = useCallback(async (input: CreateAgentInput) => {
+    try {
+      // Persist to DB so the backend can find this agent when spawning
+      const saved = await apiPost<{ id: string }>('/api/agents', {
         name: input.name,
+        persona: input.persona ?? `You are ${input.name}, a helpful assistant.`,
         description: input.description,
-        status: 'idle',
-        model: input.model,
         purpose: input.purpose,
-      },
-    )
-    setNodes((prev) => [...prev, node])
+        model: input.model,
+        scope: input.scope ?? [],
+        allowedTools: input.allowedTools ?? [],
+      })
+
+      const node = createAgentNode(
+        { x: 300 + Math.random() * 200, y: 200 + Math.random() * 200 },
+        {
+          name: input.name,
+          description: input.description,
+          status: 'idle',
+          model: input.model,
+          purpose: input.purpose,
+        },
+      )
+      // Use the DB id so the socket handler can find the agent
+      node.id = saved.id
+      setNodes((prev) => [...prev, node])
+    } catch {
+      // If API fails (server down), create local-only node
+      const node = createAgentNode(
+        { x: 300 + Math.random() * 200, y: 200 + Math.random() * 200 },
+        {
+          name: input.name,
+          description: input.description,
+          status: 'idle',
+          model: input.model,
+          purpose: input.purpose,
+        },
+      )
+      setNodes((prev) => [...prev, node])
+    }
     setCreateAgentOpen(false)
   }, [])
 
-  const handleTemplateSelected = useCallback((templateNodes: Node[], templateEdges: Edge[]) => {
-    setNodes(templateNodes)
-    setEdges(templateEdges)
+  const handleTemplateSelected = useCallback(async (templateNodes: Node[], templateEdges: Edge[]) => {
+    // Persist each agent node to DB so they can be spawned
+    const persistedNodes = await Promise.all(
+      templateNodes.map(async (node) => {
+        if (node.type !== 'agent') return node
+        const data = node.data as AgentNodeData
+        try {
+          const saved = await apiPost<{ id: string }>('/api/agents', {
+            name: data.name,
+            persona: `You are ${data.name}. ${data.description ?? ''}`.trim(),
+            description: data.description,
+            purpose: data.purpose,
+            model: data.model,
+            scope: [],
+            allowedTools: [],
+          })
+          return { ...node, id: saved.id }
+        } catch {
+          return node // keep local-only if server unavailable
+        }
+      }),
+    )
+
+    // Update edge source/target ids to match persisted agent ids
+    const idMap = new Map<string, string>()
+    templateNodes.forEach((orig, i) => {
+      if (orig.id !== persistedNodes[i].id) {
+        idMap.set(orig.id, persistedNodes[i].id)
+      }
+    })
+
+    const updatedEdges = templateEdges.map((edge) => ({
+      ...edge,
+      source: idMap.get(edge.source) ?? edge.source,
+      target: idMap.get(edge.target) ?? edge.target,
+    }))
+
+    setNodes(persistedNodes)
+    setEdges(updatedEdges)
     setTemplateGalleryOpen(false)
-    // Auto-fit view after nodes render
     setTimeout(() => {
       viewRef.current?.fitView()
       const z = viewRef.current?.getZoom()
@@ -212,19 +294,31 @@ export default function Home() {
     }, 200)
   }, [])
 
-  const handleDescribe = useCallback((description: string) => {
+  const handleDescribe = useCallback(async (description: string) => {
     const name = description.length > 30 ? description.slice(0, 30) + '...' : description
-    const node = createAgentNode(
-      { x: 300, y: 250 },
-      {
+    try {
+      const saved = await apiPost<{ id: string }>('/api/agents', {
         name,
+        persona: `You are a helpful assistant. The user described you as: "${description}". Follow these instructions carefully.`,
         description,
-        status: 'idle',
-        model: 'sonnet',
         purpose: 'general',
-      },
-    )
-    setNodes((prev) => [...prev, node])
+        model: 'sonnet',
+        scope: [],
+        allowedTools: [],
+      })
+      const node = createAgentNode(
+        { x: 300, y: 250 },
+        { name, description, status: 'idle', model: 'sonnet', purpose: 'general' },
+      )
+      node.id = saved.id
+      setNodes((prev) => [...prev, node])
+    } catch {
+      const node = createAgentNode(
+        { x: 300, y: 250 },
+        { name, description, status: 'idle', model: 'sonnet', purpose: 'general' },
+      )
+      setNodes((prev) => [...prev, node])
+    }
   }, [])
 
   const handleToggleMarketplace = useCallback(() => {
@@ -386,6 +480,8 @@ export default function Home() {
       setSelectedAgent({
         id: nodeId,
         name: data.name,
+        description: data.description,
+        purpose: data.purpose,
         status: data.status,
         model: data.model,
       })
@@ -456,6 +552,17 @@ export default function Home() {
 
   // ── Canvas nodes/edges sync ───────────────────────────────────────────
 
+  // Auto-save canvas on any change (debounced in the hook)
+  const nodesRef = useRef(nodes)
+  const edgesRef = useRef(edges)
+  nodesRef.current = nodes
+  edgesRef.current = edges
+
+  useEffect(() => {
+    if (!canvasLoaded || nodes.length === 0) return
+    saveCanvas(nodes, edges)
+  }, [nodes, edges, canvasLoaded, saveCanvas])
+
   const handleNodesChange = useCallback((updated: Node[]) => {
     setNodes(updated)
   }, [])
@@ -498,6 +605,7 @@ export default function Home() {
                 onUndoRedoReady={handleUndoRedoReady}
                 onViewReady={handleViewReady}
                 onNodeDoubleClick={handleNodeDoubleClick}
+                onZoomChange={setZoomLevel}
               />
             </div>
 
@@ -635,7 +743,7 @@ export default function Home() {
       <Sheet open={chatOpen} onOpenChange={setChatOpen}>
         <SheetContent
           side="right"
-          className="flex w-[420px] flex-col gap-0 p-0 sm:w-[500px]"
+          className="flex w-[420px] flex-col gap-0 p-0 sm:w-[500px] [&>button.absolute]:hidden"
         >
           <SheetTitle className="sr-only">
             {selectedAgent ? `Chat with ${selectedAgent.name}` : 'Agent chat'}
@@ -645,9 +753,14 @@ export default function Home() {
               <AgentChat
                 agentId={selectedAgent.id}
                 agentName={selectedAgent.name}
+                agentDescription={selectedAgent.description}
+                agentPurpose={selectedAgent.purpose}
                 agentStatus={selectedAgent.status}
                 agentModel={selectedAgent.model}
-                onClose={handleChatClose}
+                onEdit={() => {
+                  setChatOpen(false)
+                  setDrawerOpen(true)
+                }}
               />
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -657,6 +770,48 @@ export default function Home() {
           </ErrorBoundary>
         </SheetContent>
       </Sheet>
+
+      {/* Agent Drawer (edit) */}
+      <ErrorBoundary>
+        <AgentDrawer
+          agent={selectedAgent ? ({
+            id: selectedAgent.id,
+            name: selectedAgent.name,
+            avatar: null,
+            description: selectedAgent.description ?? null,
+            persona: '',
+            purpose: selectedAgent.purpose ?? null,
+            scope: [],
+            allowedTools: [],
+            memoryEnabled: false,
+            model: selectedAgent.model ?? null,
+            status: selectedAgent.status,
+            loopEnabled: false,
+            loopCriteria: null,
+            maxIterations: 10,
+            teamEnabled: false,
+            canvasX: 0,
+            canvasY: 0,
+            createdAt: '',
+            updatedAt: '',
+          } as any) : null}
+          open={drawerOpen}
+          onOpenChange={setDrawerOpen}
+          onSave={(updates) => {
+            if (!selectedAgent) return
+            setNodes((prev) => prev.map((n) =>
+              n.id === selectedAgent.id
+                ? { ...n, data: { ...n.data, ...updates } }
+                : n,
+            ))
+            setDrawerOpen(false)
+          }}
+          onOpenMarketplace={() => {
+            setDrawerOpen(false)
+            setMarketplaceOpen(true)
+          }}
+        />
+      </ErrorBoundary>
 
       {/* Approval Dialog */}
       <ErrorBoundary>

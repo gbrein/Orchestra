@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import { Server } from 'socket.io'
+import { createServer } from 'http'
 import type { ClientToServerEvents, ServerToClientEvents } from '@orchestra/shared'
 import { checkPrerequisites } from './lib/prerequisites'
 import { agentRoutes } from './routes/agents'
@@ -44,7 +45,13 @@ async function main() {
     console.warn('\nStarting with warnings...\n')
   }
 
-  const app = Fastify({ logger: true })
+  // Create a raw HTTP server so Socket.IO can attach to it before Fastify starts
+  const httpServer = createServer()
+
+  const app = Fastify({ logger: true, serverFactory: (handler) => {
+    httpServer.on('request', handler)
+    return httpServer
+  }})
 
   await app.register(cors, { origin: UI_ORIGIN })
 
@@ -74,9 +81,9 @@ async function main() {
     },
   }))
 
-  // Socket.IO setup
-  const io = new Server<ClientToServerEvents, ServerToClientEvents>(app.server, {
-    cors: { origin: UI_ORIGIN },
+  // Socket.IO setup — attach to the raw HTTP server (before Fastify listen)
+  const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
+    cors: { origin: UI_ORIGIN, methods: ['GET', 'POST'] },
   })
 
   io.on('connection', (socket) => {
@@ -115,20 +122,11 @@ async function main() {
     clearInterval(approvalWatchdog)
     processManager.stopAll()
 
-    // Stop all active loops, chains, and pipelines
-    for (const [, engine] of activeLoops) {
-      engine.stop()
-    }
+    for (const [, engine] of activeLoops) engine.stop()
     activeLoops.clear()
-
-    for (const [, executor] of activeChains) {
-      executor.stop()
-    }
+    for (const [, executor] of activeChains) executor.stop()
     activeChains.clear()
-
-    for (const [, pipeline] of activePipelines) {
-      pipeline.stop()
-    }
+    for (const [, pipeline] of activePipelines) pipeline.stop()
     activePipelines.clear()
 
     io.close()

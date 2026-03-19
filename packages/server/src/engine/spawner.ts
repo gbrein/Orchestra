@@ -34,7 +34,8 @@ export interface SpawnerEvents {
 // Resolve the claude CLI command name cross-platform.
 // On Windows the CLI binary is `claude.cmd`; on Unix it is `claude`.
 function resolveClaudeCommand(): string {
-  return process.platform === 'win32' ? 'claude.cmd' : 'claude'
+  // claude is installed as claude.exe on Windows (not .cmd)
+  return 'claude'
 }
 
 // Build the allowed-env object passed to the child process.
@@ -127,9 +128,13 @@ export class ClaudeCodeSpawner extends EventEmitter {
       if (stdoutBuffer.trim().length > 0) {
         this.handleLine(stdoutBuffer.replace(/\r$/, '').trim())
       }
-      const exitCode = code ?? 1
-      if (exitCode !== 0 && this._stderrBuffer.length > 0) {
-        this.emit('error', new Error(`Claude exited with code ${exitCode}: ${this._stderrBuffer.trim()}`))
+      const exitCode = code ?? 0
+      // Only treat as error if exit code is non-zero AND stderr contains
+      // something other than benign warnings (like the stdin warning)
+      const stderrContent = this._stderrBuffer.trim()
+      const isBenignStderr = !stderrContent || stderrContent.includes('no stdin data received')
+      if (exitCode !== 0 && !isBenignStderr) {
+        this.emit('error', new Error(`Claude exited with code ${exitCode}: ${stderrContent}`))
       } else {
         this.emit('completion', { exitCode })
       }
@@ -187,8 +192,8 @@ export class ClaudeCodeSpawner extends EventEmitter {
   private buildArgs(options: SpawnOptions): string[] {
     const args: string[] = [
       '--print',
+      '--verbose',
       '--output-format', 'stream-json',
-      '--include-partial-messages',
       '--permission-mode', options.permissionMode ?? 'dontAsk',
       '--system-prompt', options.systemPrompt,
       '--session-id', options.sessionId,
@@ -238,61 +243,73 @@ export class ClaudeCodeSpawner extends EventEmitter {
 
   private dispatchEvent(event: StreamEvent): void {
     switch (event.type) {
-      case 'content_block_delta': {
-        const delta = event.delta as { type?: string; text?: string } | undefined
-        if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
-          this.emit('text', { content: delta.text, partial: true })
-        }
-        break
-      }
+      // ── Claude Code CLI stream-json format ──────────────────────────
 
-      case 'content_block_stop': {
-        // Signals end of a streaming text block; emit a non-partial flush
-        const content = (event.content as string | undefined) ?? ''
-        if (content.length > 0) {
-          this.emit('text', { content, partial: false })
-        }
-        break
-      }
+      case 'assistant': {
+        // {"type":"assistant","message":{"content":[{"type":"text","text":"..."}],"usage":{...}}}
+        const msg = event.message as {
+          content?: Array<{ type: string; text?: string; name?: string; input?: unknown; id?: string }>
+          usage?: { input_tokens?: number; output_tokens?: number }
+          stop_reason?: string | null
+        } | undefined
 
-      case 'message_delta': {
-        const usage = event.usage as { input_tokens?: number; output_tokens?: number } | undefined
-        if (usage) {
-          const inputTokens = usage.input_tokens ?? 0
-          const outputTokens = usage.output_tokens ?? 0
-          // Approximate cost: sonnet pricing as a reasonable default
+        if (!msg?.content) break
+
+        for (const block of msg.content) {
+          if (block.type === 'text' && typeof block.text === 'string') {
+            const isPartial = msg.stop_reason === null
+            this.emit('text', { content: block.text, partial: isPartial })
+          }
+          if (block.type === 'tool_use' && block.name) {
+            this.emit('tool_use', {
+              toolName: block.name,
+              input: block.input ?? {},
+              id: block.id ?? '',
+            })
+          }
+          if (block.type === 'tool_result') {
+            this.emit('tool_result', {
+              toolName: (block as any).tool_name ?? 'unknown',
+              output: (block as any).output ?? {},
+              toolUseId: (block as any).tool_use_id ?? '',
+            })
+          }
+        }
+
+        // Emit usage if present
+        if (msg.usage) {
+          const inputTokens = msg.usage.input_tokens ?? 0
+          const outputTokens = msg.usage.output_tokens ?? 0
           const estimatedCostUsd = inputTokens * 0.000003 + outputTokens * 0.000015
           this.emit('usage', { inputTokens, outputTokens, estimatedCostUsd })
         }
         break
       }
 
-      case 'tool_use': {
-        this.emit('tool_use', {
-          toolName: (event.name as string | undefined) ?? 'unknown',
-          input: event.input ?? {},
-          id: (event.id as string | undefined) ?? '',
-        })
-        break
-      }
-
-      case 'tool_result': {
-        this.emit('tool_result', {
-          toolName: (event.tool_name as string | undefined) ?? 'unknown',
-          output: event.output ?? {},
-          toolUseId: (event.tool_use_id as string | undefined) ?? '',
-        })
-        break
-      }
-
       case 'result': {
-        // Final result event from stream-json — contains the full message
+        // {"type":"result","result":"Hello","total_cost_usd":0.15,"usage":{...}}
         const resultContent = event.result as string | undefined
         if (resultContent && resultContent.length > 0) {
           this.emit('text', { content: resultContent, partial: false })
         }
+
+        // Extract usage from the result event
+        const resultUsage = event.usage as {
+          input_tokens?: number
+          output_tokens?: number
+        } | undefined
+        if (resultUsage) {
+          const inputTokens = resultUsage.input_tokens ?? 0
+          const outputTokens = resultUsage.output_tokens ?? 0
+          const totalCost = (event.total_cost_usd as number | undefined) ?? (inputTokens * 0.000003 + outputTokens * 0.000015)
+          this.emit('usage', { inputTokens, outputTokens, estimatedCostUsd: totalCost })
+        }
         break
       }
+
+      case 'rate_limit_event':
+        // Rate limit info — log but don't surface to user
+        break
 
       case 'system':
       case 'init':

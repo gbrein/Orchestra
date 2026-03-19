@@ -11,7 +11,7 @@ export interface BottomBarProps {
   readonly connecting?: boolean
   readonly socketError?: string | null
   readonly runningAgentCount?: number
-  readonly sessionCostUsd?: number
+  readonly sessionTokens?: number
   readonly zoomLevel?: number
   readonly onZoomIn?: () => void
   readonly onZoomOut?: () => void
@@ -25,7 +25,7 @@ export function BottomBar({
   connecting = false,
   socketError = null,
   runningAgentCount = 0,
-  sessionCostUsd = 0,
+  sessionTokens = 0,
   zoomLevel = 100,
   onZoomIn,
   onZoomOut,
@@ -90,7 +90,7 @@ export function BottomBar({
             : `${runningAgentCount} assistant${runningAgentCount > 1 ? 's' : ''} running`}
         </span>
         <span aria-hidden>·</span>
-        <span>${sessionCostUsd.toFixed(2)} session cost</span>
+        <span>{sessionTokens.toLocaleString()} tokens</span>
       </div>
 
       {/* Right: Zoom controls */}

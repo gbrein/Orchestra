@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { socket } from '@/lib/socket'
+import { getSocket, isSocketCreated } from '@/lib/socket'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -68,9 +68,11 @@ export function LoopIndicator({ agentId, size = 220 }: LoopIndicatorProps) {
       return () => clearTimeout(t)
     }
 
-    socket.on('agent:loop_iteration', handleLoopIteration)
+    if (!isSocketCreated()) return
+    const sock = getSocket()
+    sock.on('agent:loop_iteration', handleLoopIteration)
     return () => {
-      socket.off('agent:loop_iteration', handleLoopIteration)
+      sock.off('agent:loop_iteration', handleLoopIteration)
     }
   }, [agentId])
 

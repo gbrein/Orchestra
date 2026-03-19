@@ -8,6 +8,7 @@ import { NotificationPanel } from '@/components/shell/notification-panel'
 import { WorkspaceSwitcher, type Workspace } from '@/components/panels/workspace-switcher'
 import { cn } from '@/lib/utils'
 import type { OrchestraNotification } from '@/hooks/use-notifications'
+import { useComplexity } from '@/hooks/use-complexity'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,7 @@ export function TopBar({
   onSettingsClick,
   activeTab = 'workspace',
 }: TopBarProps) {
+  const { isSimple } = useComplexity()
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false)
   const bellButtonRef = useRef<HTMLButtonElement>(null)
 
@@ -108,34 +110,38 @@ export function TopBar({
         >
           Workspace
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={cn(
-            'h-7 text-xs',
-            activeTab === 'discussions'
-              ? 'font-medium text-foreground'
-              : 'text-muted-foreground',
-          )}
-          aria-current={activeTab === 'discussions' ? 'page' : undefined}
-          onClick={onDiscussionsClick}
-        >
-          Discussions
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={cn(
-            'h-7 text-xs',
-            activeTab === 'history'
-              ? 'font-medium text-foreground'
-              : 'text-muted-foreground',
-          )}
-          aria-current={activeTab === 'history' ? 'page' : undefined}
-          onClick={onHistoryClick}
-        >
-          History
-        </Button>
+        {!isSimple && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn(
+              'h-7 text-xs',
+              activeTab === 'discussions'
+                ? 'font-medium text-foreground'
+                : 'text-muted-foreground',
+            )}
+            aria-current={activeTab === 'discussions' ? 'page' : undefined}
+            onClick={onDiscussionsClick}
+          >
+            Discussions
+          </Button>
+        )}
+        {!isSimple && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn(
+              'h-7 text-xs',
+              activeTab === 'history'
+                ? 'font-medium text-foreground'
+                : 'text-muted-foreground',
+            )}
+            aria-current={activeTab === 'history' ? 'page' : undefined}
+            onClick={onHistoryClick}
+          >
+            History
+          </Button>
+        )}
       </nav>
 
       {/* Right: Notifications + Settings */}

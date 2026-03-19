@@ -45,7 +45,7 @@ function loadCodeReviewPipeline(): { nodes: Node[]; edges: Edge[] } {
       name: 'Code Writer',
       description: 'Writes and iterates on code solutions',
       status: 'idle',
-      model: 'claude-sonnet-4-5',
+      model: 'sonnet',
       purpose: 'coding',
     },
   )
@@ -56,7 +56,7 @@ function loadCodeReviewPipeline(): { nodes: Node[]; edges: Edge[] } {
       name: 'Code Reviewer',
       description: 'Reviews code for quality and correctness',
       status: 'idle',
-      model: 'claude-opus-4-5',
+      model: 'opus',
       purpose: 'review',
     },
   )
@@ -67,7 +67,7 @@ function loadCodeReviewPipeline(): { nodes: Node[]; edges: Edge[] } {
       name: 'Security Reviewer',
       description: 'Audits code for vulnerabilities and security issues',
       status: 'idle',
-      model: 'claude-opus-4-5',
+      model: 'opus',
       purpose: 'review',
     },
   )
@@ -91,7 +91,7 @@ function loadContentWritingTeam(): { nodes: Node[]; edges: Edge[] } {
       name: 'Researcher',
       description: 'Gathers and synthesises background information',
       status: 'idle',
-      model: 'claude-sonnet-4-5',
+      model: 'sonnet',
       purpose: 'research',
     },
   )
@@ -102,7 +102,7 @@ function loadContentWritingTeam(): { nodes: Node[]; edges: Edge[] } {
       name: 'Writer',
       description: 'Drafts compelling content from research',
       status: 'idle',
-      model: 'claude-sonnet-4-5',
+      model: 'sonnet',
       purpose: 'writing',
     },
   )
@@ -113,7 +113,7 @@ function loadContentWritingTeam(): { nodes: Node[]; edges: Edge[] } {
       name: 'Editor',
       description: 'Polishes and refines written content',
       status: 'idle',
-      model: 'claude-sonnet-4-5',
+      model: 'sonnet',
       purpose: 'review',
     },
   )
@@ -137,7 +137,7 @@ function loadResearchAssistant(): { nodes: Node[]; edges: Edge[] } {
       name: 'Research Bot',
       description: 'Conducts in-depth research across multiple sources',
       status: 'idle',
-      model: 'claude-sonnet-4-5',
+      model: 'sonnet',
       purpose: 'research',
     },
   )
@@ -183,7 +183,7 @@ function loadBrainstormTeam(): { nodes: Node[]; edges: Edge[] } {
       name: 'Creative',
       description: 'Generates imaginative, out-of-the-box ideas',
       status: 'idle',
-      model: 'claude-sonnet-4-5',
+      model: 'sonnet',
       purpose: 'creative',
     },
   )
@@ -194,7 +194,7 @@ function loadBrainstormTeam(): { nodes: Node[]; edges: Edge[] } {
       name: 'Analyst',
       description: 'Evaluates ideas with data-driven reasoning',
       status: 'idle',
-      model: 'claude-opus-4-5',
+      model: 'opus',
       purpose: 'analysis',
     },
   )
@@ -205,7 +205,7 @@ function loadBrainstormTeam(): { nodes: Node[]; edges: Edge[] } {
       name: "Devil's Advocate",
       description: 'Challenges assumptions and stress-tests ideas',
       status: 'idle',
-      model: 'claude-sonnet-4-5',
+      model: 'sonnet',
       purpose: 'analysis',
     },
   )
@@ -216,7 +216,7 @@ function loadBrainstormTeam(): { nodes: Node[]; edges: Edge[] } {
       name: 'Moderator',
       description: 'Facilitates discussion and synthesises outcomes',
       status: 'idle',
-      model: 'claude-sonnet-4-5',
+      model: 'sonnet',
       purpose: 'general',
     },
   )
