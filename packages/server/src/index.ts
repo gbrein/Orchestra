@@ -3,6 +3,12 @@ import cors from '@fastify/cors'
 import { Server } from 'socket.io'
 import type { ClientToServerEvents, ServerToClientEvents } from '@orchestra/shared'
 import { checkPrerequisites } from './lib/prerequisites'
+import { agentRoutes } from './routes/agents'
+import { skillRoutes } from './routes/skills'
+import { policyRoutes } from './routes/policies'
+import { sessionRoutes } from './routes/sessions'
+import { discussionRoutes } from './routes/discussions'
+import { canvasRoutes } from './routes/canvas'
 
 const PORT = parseInt(process.env.PORT ?? '3001', 10)
 const UI_ORIGIN = process.env.UI_ORIGIN ?? 'http://localhost:3000'
@@ -28,6 +34,14 @@ async function main() {
   const app = Fastify({ logger: true })
 
   await app.register(cors, { origin: UI_ORIGIN })
+
+  // Routes
+  await app.register(agentRoutes)
+  await app.register(skillRoutes)
+  await app.register(policyRoutes)
+  await app.register(sessionRoutes)
+  await app.register(discussionRoutes)
+  await app.register(canvasRoutes)
 
   // Health check
   app.get('/api/health', async () => ({
