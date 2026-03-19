@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { TokenUsage } from '@orchestra/shared'
-import { getSocket } from '@/lib/socket'
+import { getSocket, isSocketCreated } from '@/lib/socket'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -71,7 +71,7 @@ export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
   const streamingMessageIdRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!agentId) return
+    if (!agentId || !isSocketCreated()) return
 
     function handleText(data: {
       agentId: string

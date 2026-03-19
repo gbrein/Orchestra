@@ -3,27 +3,44 @@ import type { ClientToServerEvents, ServerToClientEvents } from '@orchestra/shar
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL ?? 'http://localhost:3001'
 
-let _socket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null
+type OrchestraSocket = Socket<ServerToClientEvents, ClientToServerEvents>
 
-export function getSocket(): Socket<ServerToClientEvents, ClientToServerEvents> {
+let _socket: OrchestraSocket | null = null
+let _created = false
+
+/**
+ * Returns the socket singleton, creating it lazily on first call.
+ * The socket is created with `autoConnect: false` — it will NOT
+ * connect until `.connect()` is explicitly called.
+ */
+export function getSocket(): OrchestraSocket {
   if (!_socket) {
     _socket = io(SOCKET_URL, {
       autoConnect: false,
       reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 2000,
+      reconnectionAttempts: 3,
+      reconnectionDelay: 3000,
       reconnectionDelayMax: 10000,
       timeout: 5000,
     })
+    _created = true
   }
   return _socket
 }
 
-// Backward compat — lazy singleton
-export const socket = new Proxy({} as Socket<ServerToClientEvents, ClientToServerEvents>, {
-  get(_target, prop) {
-    const s = getSocket()
-    const value = (s as any)[prop]
-    return typeof value === 'function' ? value.bind(s) : value
-  },
-})
+/**
+ * Returns the socket ONLY if it was already created AND is connected.
+ * Returns null otherwise. Use this in hooks that want to attach listeners
+ * without triggering socket creation or connection.
+ */
+export function getSocketIfConnected(): OrchestraSocket | null {
+  if (_socket && _socket.connected) return _socket
+  return null
+}
+
+/**
+ * Returns true if the socket has been created (even if not connected).
+ */
+export function isSocketCreated(): boolean {
+  return _created
+}

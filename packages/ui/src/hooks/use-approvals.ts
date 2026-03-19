@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { getSocket } from '@/lib/socket'
+import { getSocket, isSocketCreated } from '@/lib/socket'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -77,6 +77,8 @@ export function useApprovals(): UseApprovalsReturn {
         return updated
       })
     }
+
+    if (!isSocketCreated()) return
 
     const socket = getSocket()
     socket.on('agent:approval', handleApproval)

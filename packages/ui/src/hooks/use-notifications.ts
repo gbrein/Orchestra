@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getSocket } from '@/lib/socket'
+import { getSocket, isSocketCreated } from '@/lib/socket'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -105,9 +105,11 @@ export function useNotifications(): UseNotificationsReturn {
     setNotifications([])
   }, [])
 
-  // ── Socket event listeners ─────────────────────────────────────────────
+  // ── Socket event listeners (only when socket exists) ──────────────────
 
   useEffect(() => {
+    // Don't create the socket just to listen — wait until it's created by user action
+    if (!isSocketCreated()) return
     function handleNotification(data: {
       id: string
       level: NotificationLevel
