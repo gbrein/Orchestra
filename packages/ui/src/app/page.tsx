@@ -148,20 +148,32 @@ export default function Home() {
     }, 100)
   }, [])
 
-  // Load canvas from DB on mount
+  // Load canvas from DB on mount (but don't auto-switch to canvas view)
+  const [savedNodes, setSavedNodes] = useState<Node[]>([])
+  const [savedEdges, setSavedEdges] = useState<Edge[]>([])
+  const [showHome, setShowHome] = useState(true)
   const loadedRef = useRef(false)
+
   useEffect(() => {
     if (loadedRef.current) return
     loadedRef.current = true
     void loadCanvas().then((data) => {
       if (data) {
-        setNodes(data.nodes)
-        setEdges(data.edges)
+        setSavedNodes(data.nodes)
+        setSavedEdges(data.edges)
       }
     })
   }, [loadCanvas])
 
-  const showCanvas = nodes.length > 0
+  const goToWorkspace = useCallback(() => {
+    if (savedNodes.length > 0) {
+      setNodes(savedNodes)
+      setEdges(savedEdges)
+    }
+    setShowHome(false)
+  }, [savedNodes, savedEdges])
+
+  const showCanvas = !showHome && nodes.length > 0
 
   const runningAgentCount = nodes.filter(
     (n) => n.type === 'agent' && (n.data as AgentNodeData).status === 'running',
@@ -611,11 +623,13 @@ export default function Home() {
 
             {!showCanvas && (
               <CanvasPlaceholder
-                onCreateAssistant={handleCreateAgent}
-                onStartDiscussion={handleSidebarDiscussionsClick}
-                onUseTemplate={handleUseTemplate}
-                onExploreSkills={handleToggleMarketplace}
-                onDescribe={handleDescribe}
+                onCreateAssistant={() => { setShowHome(false); handleCreateAgent() }}
+                onStartDiscussion={() => { setShowHome(false); handleSidebarDiscussionsClick() }}
+                onUseTemplate={() => { setShowHome(false); handleUseTemplate() }}
+                onExploreSkills={() => { setShowHome(false); handleToggleMarketplace() }}
+                onDescribe={(desc) => { setShowHome(false); handleDescribe(desc) }}
+                onGoToWorkspace={goToWorkspace}
+                hasExistingCanvas={savedNodes.length > 0}
               />
             )}
           </ErrorBoundary>
