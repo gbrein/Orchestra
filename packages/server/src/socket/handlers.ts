@@ -7,6 +7,9 @@ import { classifyError } from '../engine/error-types'
 import { resolvePolicy } from '../engine/policy-resolver'
 import { checkToolUse } from '../engine/policy-checker'
 import { ApprovalManager } from '../engine/approval-manager'
+import { ModeratorEngine } from '../discussion/moderator'
+import type { AgentRecord } from '../discussion/moderator'
+import type { ParticipantRole, DiscussionFormat } from '@orchestra/shared'
 
 // Tracks the active sessionId per agentId so we can emit back on the right channel
 const agentSessionMap = new Map<string, string>()
@@ -16,6 +19,9 @@ const agentPolicyMap = new Map<string, ResolvedPolicy>()
 
 // Tracks the pending approval id per agentId (at most one at a time)
 const agentApprovalMap = new Map<string, string>()
+
+// Tracks active ModeratorEngine instances by tableId
+const activeDiscussions = new Map<string, ModeratorEngine>()
 
 export function registerSocketHandlers(
   io: Server<ClientToServerEvents, ServerToClientEvents>,
@@ -212,6 +218,18 @@ export function registerSocketHandlers(
 
     socket.on('approval:respond', (data) => {
       void handleApprovalRespond(io, processManager, approvalManager, data)
+    })
+
+    socket.on('discussion:start', (data) => {
+      void handleDiscussionStart(socket, io, data)
+    })
+
+    socket.on('discussion:pause', (data) => {
+      handleDiscussionPause(socket, io, data)
+    })
+
+    socket.on('discussion:resume', (data) => {
+      void handleDiscussionResume(socket, io, data)
     })
   })
 }
@@ -422,6 +440,183 @@ async function handleApprovalRespond(
     void prisma.agent
       .update({ where: { id: agentId }, data: { status: 'idle' } })
       .catch(() => { /* best-effort */ })
+  }
+}
+
+// ------------------------------------------------------------------
+// Discussion handler implementations
+// ------------------------------------------------------------------
+
+async function handleDiscussionStart(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents>,
+  io: Server<ClientToServerEvents, ServerToClientEvents>,
+  data: { tableId: string },
+): Promise<void> {
+  const { tableId } = data
+
+  if (activeDiscussions.has(tableId)) {
+    socket.emit('agent:error', {
+      agentId: tableId,
+      sessionId: '',
+      error: `Discussion ${tableId} is already running`,
+      type: 'RESOURCE_ERROR',
+    })
+    return
+  }
+
+  try {
+    const table = await prisma.discussionTable.findUnique({
+      where: { id: tableId },
+      include: {
+        moderator: true,
+        participants: { include: { agent: true } },
+      },
+    })
+
+    if (!table) {
+      socket.emit('agent:error', {
+        agentId: tableId,
+        sessionId: '',
+        error: `Discussion table ${tableId} not found`,
+        type: 'PROCESS_ERROR',
+      })
+      return
+    }
+
+    if (table.participants.length === 0) {
+      socket.emit('agent:error', {
+        agentId: tableId,
+        sessionId: '',
+        error: 'Cannot start discussion: no participants added',
+        type: 'PROCESS_ERROR',
+      })
+      return
+    }
+
+    const participantsWithRoles = (table.participants as Array<{ agent: AgentRecord; role: string }>).map((p) => ({
+      agent: p.agent,
+      role: p.role as ParticipantRole,
+    }))
+
+    const engine = new ModeratorEngine(
+      tableId,
+      table.topic,
+      table.format as DiscussionFormat,
+      table.moderator as AgentRecord,
+      participantsWithRoles,
+      table.maxRounds,
+    )
+
+    // Forward engine events to all connected Socket.IO clients
+    engine.on('turn', (round) => {
+      const participant = participantsWithRoles.find((p: { agent: AgentRecord; role: ParticipantRole }) => p.agent.id === round.participantId)
+      io.emit('discussion:turn', {
+        tableId,
+        agentName: round.participantName,
+        role: participant?.role ?? 'participant',
+        content: round.response,
+      })
+    })
+
+    engine.on('moderator_decision', (decision) => {
+      io.emit('discussion:moderator', {
+        tableId,
+        decision: decision.decision,
+        reasoning: decision.reasoning,
+      })
+    })
+
+    engine.on('concluded', (synthesis) => {
+      activeDiscussions.delete(tableId)
+      io.emit('discussion:concluded', { tableId, conclusion: synthesis })
+    })
+
+    engine.on('error', (err: Error) => {
+      activeDiscussions.delete(tableId)
+      io.emit('agent:error', {
+        agentId: tableId,
+        sessionId: '',
+        error: err.message,
+        type: 'PROCESS_ERROR',
+      })
+    })
+
+    activeDiscussions.set(tableId, engine)
+
+    // Start the engine — this is async and runs the full discussion loop
+    engine.start().catch((err: unknown) => {
+      activeDiscussions.delete(tableId)
+      io.emit('agent:error', {
+        agentId: tableId,
+        sessionId: '',
+        error: err instanceof Error ? err.message : 'Discussion failed to start',
+        type: 'PROCESS_ERROR',
+      })
+    })
+  } catch (err) {
+    socket.emit('agent:error', {
+      agentId: tableId,
+      sessionId: '',
+      error: err instanceof Error ? err.message : 'Failed to start discussion',
+      type: 'PROCESS_ERROR',
+    })
+  }
+}
+
+function handleDiscussionPause(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents>,
+  io: Server<ClientToServerEvents, ServerToClientEvents>,
+  data: { tableId: string },
+): void {
+  const { tableId } = data
+  const engine = activeDiscussions.get(tableId)
+
+  if (!engine) {
+    socket.emit('agent:error', {
+      agentId: tableId,
+      sessionId: '',
+      error: `No active discussion for table ${tableId}`,
+      type: 'PROCESS_ERROR',
+    })
+    return
+  }
+
+  engine.pause()
+  io.emit('agent:status', { agentId: tableId, status: 'paused' })
+
+  void prisma.discussionTable
+    .update({ where: { id: tableId }, data: { status: 'active' } })
+    .catch(() => { /* best-effort */ })
+}
+
+async function handleDiscussionResume(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents>,
+  io: Server<ClientToServerEvents, ServerToClientEvents>,
+  data: { tableId: string },
+): Promise<void> {
+  const { tableId } = data
+  const engine = activeDiscussions.get(tableId)
+
+  if (!engine) {
+    socket.emit('agent:error', {
+      agentId: tableId,
+      sessionId: '',
+      error: `No active discussion for table ${tableId}`,
+      type: 'PROCESS_ERROR',
+    })
+    return
+  }
+
+  try {
+    io.emit('agent:status', { agentId: tableId, status: 'running' })
+    await engine.resume()
+  } catch (err) {
+    socket.emit('agent:error', {
+      agentId: tableId,
+      sessionId: '',
+      error: err instanceof Error ? err.message : 'Failed to resume discussion',
+      type: 'PROCESS_ERROR',
+    })
   }
 }
 

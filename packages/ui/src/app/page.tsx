@@ -12,12 +12,14 @@ import { ShortcutOverlay } from '@/components/shell/shortcut-overlay'
 import { AgentChat } from '@/components/panels/agent-chat'
 import { ApprovalDialog } from '@/components/panels/approval-dialog'
 import { SkillMarketplace } from '@/components/panels/skill-marketplace'
+import { DiscussionWizard, type DiscussionAgent } from '@/components/panels/discussion-wizard'
+import { DiscussionPanel } from '@/components/panels/discussion-panel'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { useSocket } from '@/hooks/use-socket'
 import { useNotifications } from '@/hooks/use-notifications'
 import { useApprovals } from '@/hooks/use-approvals'
 import type { AgentNodeData } from '@/lib/canvas-utils'
-import type { AgentStatus } from '@orchestra/shared'
+import type { AgentStatus, DiscussionTable, CreateDiscussionInput } from '@orchestra/shared'
 import type { OrchestraNotification } from '@/hooks/use-notifications'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -37,6 +39,9 @@ export default function Home() {
   const [selectedAgent, setSelectedAgent] = useState<SelectedAgent | null>(null)
   const [chatOpen, setChatOpen] = useState(false)
   const [marketplaceOpen, setMarketplaceOpen] = useState(false)
+  const [discussionWizardOpen, setDiscussionWizardOpen] = useState(false)
+  const [selectedDiscussion, setSelectedDiscussion] = useState<DiscussionTable | null>(null)
+  const [discussionPanelOpen, setDiscussionPanelOpen] = useState(false)
 
   const { connected, connecting, error: socketError } = useSocket()
 
@@ -107,6 +112,41 @@ export default function Home() {
     setMarketplaceOpen((prev) => !prev)
   }, [])
 
+  const handleDiscussionsClick = useCallback(() => {
+    setDiscussionWizardOpen(true)
+  }, [])
+
+  const handleDiscussionCreate = useCallback((config: CreateDiscussionInput) => {
+    // Build a provisional DiscussionTable from the wizard input so the panel
+    // can open immediately while the server persists the record.
+    const provisional: DiscussionTable = {
+      id: crypto.randomUUID(),
+      name: config.name,
+      topic: config.topic,
+      format: config.format,
+      moderatorId: config.moderatorId,
+      status: 'draft',
+      conclusion: null,
+      maxRounds: config.maxRounds ?? 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    setSelectedDiscussion(provisional)
+    setDiscussionPanelOpen(true)
+  }, [])
+
+  // Derive DiscussionAgent list from canvas agent nodes
+  const discussionAgents: DiscussionAgent[] = nodes
+    .filter((n) => n.type === 'agent')
+    .map((n) => {
+      const data = n.data as AgentNodeData
+      return {
+        id: n.id,
+        name: data.name,
+        model: data.model,
+      }
+    })
+
   const handleToggleShortcuts = useCallback(() => {
     setShortcutsOpen((prev) => !prev)
   }, [])
@@ -115,6 +155,8 @@ export default function Home() {
     setShortcutsOpen(false)
     setChatOpen(false)
     setMarketplaceOpen(false)
+    setDiscussionWizardOpen(false)
+    setDiscussionPanelOpen(false)
     setNodes((prev) =>
       prev.map((n) => ({ ...n, selected: false })),
     )
@@ -202,7 +244,10 @@ export default function Home() {
         onReviewApproval={handleReviewApproval}
       />
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar onSkillsClick={handleToggleMarketplace} />
+        <Sidebar
+          onSkillsClick={handleToggleMarketplace}
+          onDiscussionsClick={handleDiscussionsClick}
+        />
         <main className="relative flex-1 overflow-hidden">
           {/* Canvas is always mounted so React Flow can initialise; it is
               hidden (not unmounted) when the placeholder is shown so we don't
@@ -267,6 +312,21 @@ export default function Home() {
         approval={approvalDialogData}
         onApprove={approve}
         onReject={reject}
+      />
+
+      {/* Discussion Wizard — opens from sidebar Discussions click */}
+      <DiscussionWizard
+        open={discussionWizardOpen}
+        onOpenChange={setDiscussionWizardOpen}
+        agents={discussionAgents}
+        onCreate={handleDiscussionCreate}
+      />
+
+      {/* Discussion Panel — opens after a discussion is created or selected */}
+      <DiscussionPanel
+        open={discussionPanelOpen}
+        onOpenChange={setDiscussionPanelOpen}
+        discussion={selectedDiscussion}
       />
     </div>
   )

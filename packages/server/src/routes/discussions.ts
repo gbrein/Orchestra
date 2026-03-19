@@ -1,7 +1,15 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma'
-import { sendSuccess, sendError, NotFoundError } from '../lib/errors'
+import { sendSuccess, sendError, NotFoundError, ValidationError } from '../lib/errors'
+import { ModeratorEngine } from '../discussion/moderator'
+import type { AgentRecord } from '../discussion/moderator'
+import type { ParticipantRole, DiscussionFormat } from '@orchestra/shared'
+
+// Registry of active discussion engines — shared with socket handlers
+// via module scope. The socket handler is the primary owner; routes
+// provide an HTTP control surface for the same engines.
+const activeEngines = new Map<string, ModeratorEngine>()
 
 const CreateDiscussionSchema = z.object({
   name: z.string().min(1).max(100),
@@ -146,4 +154,163 @@ export async function discussionRoutes(app: FastifyInstance) {
       }
     },
   )
+
+  // ------------------------------------------------------------------
+  // Discussion engine control endpoints
+  // ------------------------------------------------------------------
+
+  /**
+   * POST /api/discussions/:id/start
+   * Start a discussion. Creates a ModeratorEngine and begins the discussion loop.
+   * The engine emits events via Socket.IO; this endpoint just initiates it.
+   */
+  app.post<{ Params: { id: string } }>('/api/discussions/:id/start', async (req, reply) => {
+    try {
+      const { id: tableId } = req.params
+
+      if (activeEngines.has(tableId)) {
+        throw new ValidationError('Discussion is already running')
+      }
+
+      const table = await prisma.discussionTable.findUnique({
+        where: { id: tableId },
+        include: {
+          moderator: true,
+          participants: { include: { agent: true } },
+        },
+      })
+      if (!table) throw new NotFoundError('Discussion', tableId)
+
+      if (table.status === 'concluded') {
+        throw new ValidationError('Discussion has already concluded')
+      }
+
+      if (table.participants.length === 0) {
+        throw new ValidationError('Cannot start discussion: no participants added')
+      }
+
+      const participantsWithRoles = (table.participants as Array<{ agent: AgentRecord; role: string }>).map((p) => ({
+        agent: p.agent,
+        role: p.role as ParticipantRole,
+      }))
+
+      const engine = new ModeratorEngine(
+        tableId,
+        table.topic,
+        table.format as DiscussionFormat,
+        table.moderator as AgentRecord,
+        participantsWithRoles,
+        table.maxRounds,
+      )
+
+      engine.on('concluded', () => {
+        activeEngines.delete(tableId)
+      })
+
+      engine.on('error', () => {
+        activeEngines.delete(tableId)
+      })
+
+      activeEngines.set(tableId, engine)
+
+      // Fire-and-forget — the discussion runs asynchronously
+      engine.start().catch(() => {
+        activeEngines.delete(tableId)
+      })
+
+      sendSuccess(reply, { started: true, tableId })
+    } catch (error) {
+      sendError(reply, error)
+    }
+  })
+
+  /**
+   * POST /api/discussions/:id/pause
+   * Pause a running discussion after the current turn completes.
+   */
+  app.post<{ Params: { id: string } }>('/api/discussions/:id/pause', async (req, reply) => {
+    try {
+      const { id: tableId } = req.params
+
+      const engine = activeEngines.get(tableId)
+      if (!engine) {
+        throw new ValidationError('Discussion is not currently running')
+      }
+
+      engine.pause()
+      sendSuccess(reply, { paused: true, tableId })
+    } catch (error) {
+      sendError(reply, error)
+    }
+  })
+
+  /**
+   * POST /api/discussions/:id/resume
+   * Resume a paused discussion.
+   */
+  app.post<{ Params: { id: string } }>('/api/discussions/:id/resume', async (req, reply) => {
+    try {
+      const { id: tableId } = req.params
+
+      const engine = activeEngines.get(tableId)
+      if (!engine) {
+        throw new ValidationError('Discussion is not currently running or has not been started via this server instance')
+      }
+
+      await engine.resume()
+      sendSuccess(reply, { resumed: true, tableId })
+    } catch (error) {
+      sendError(reply, error)
+    }
+  })
+
+  /**
+   * GET /api/discussions/:id/transcript
+   * Return the full message transcript for the most recent session of this discussion.
+   */
+  app.get<{ Params: { id: string } }>('/api/discussions/:id/transcript', async (req, reply) => {
+    try {
+      const { id: tableId } = req.params
+
+      const table = await prisma.discussionTable.findUnique({
+        where: { id: tableId },
+      })
+      if (!table) throw new NotFoundError('Discussion', tableId)
+
+      // Find the most recent session for this table
+      const session = await prisma.session.findFirst({
+        where: { tableId },
+        orderBy: { startedAt: 'desc' },
+        include: {
+          messages: {
+            orderBy: { timestamp: 'asc' },
+            select: {
+              id: true,
+              role: true,
+              content: true,
+              timestamp: true,
+              tokenCount: true,
+            },
+          },
+        },
+      })
+
+      sendSuccess(reply, {
+        tableId,
+        topic: table.topic,
+        status: table.status,
+        conclusion: table.conclusion,
+        session: session
+          ? {
+              id: session.id,
+              startedAt: session.startedAt,
+              endedAt: session.endedAt,
+              messages: session.messages,
+            }
+          : null,
+      })
+    } catch (error) {
+      sendError(reply, error)
+    }
+  })
 }
