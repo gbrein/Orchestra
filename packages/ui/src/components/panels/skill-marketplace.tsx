@@ -192,11 +192,13 @@ function SkillCard({ skill, isInstalled, onInstall, onClick }: SkillCardProps) {
   }
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
       className={cn(
-        'w-full rounded-lg border bg-card p-4 text-left transition-colors',
+        'w-full cursor-pointer rounded-lg border bg-card p-4 text-left transition-colors',
         'hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
       )}
       aria-label={`View details for ${skill.name}`}
@@ -276,7 +278,7 @@ function SkillCard({ skill, isInstalled, onInstall, onClick }: SkillCardProps) {
           </div>
         </div>
       </div>
-    </button>
+    </div>
   )
 }
 

@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { socket } from '@/lib/socket'
+import { useEffect, useState, useRef } from 'react'
+import { getSocket } from '@/lib/socket'
 
 export interface UseSocketReturn {
   connected: boolean
@@ -10,67 +10,63 @@ export interface UseSocketReturn {
 }
 
 export function useSocket(): UseSocketReturn {
-  const [connected, setConnected] = useState<boolean>(socket.connected)
-  const [connecting, setConnecting] = useState<boolean>(!socket.connected)
+  const [connected, setConnected] = useState(false)
+  const [connecting, setConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const mountedRef = useRef(true)
 
   useEffect(() => {
-    function handleConnect() {
+    mountedRef.current = true
+    let socket: ReturnType<typeof getSocket> | null = null
+
+    const handleConnect = () => {
+      if (!mountedRef.current) return
       setConnected(true)
       setConnecting(false)
       setError(null)
     }
 
-    function handleDisconnect() {
+    const handleDisconnect = () => {
+      if (!mountedRef.current) return
       setConnected(false)
       setConnecting(false)
     }
 
-    function handleConnectError(err: Error) {
+    const handleConnectError = () => {
+      if (!mountedRef.current) return
       setConnected(false)
       setConnecting(false)
-      setError(err.message)
+      // Don't spam error state when server isn't running
     }
 
-    function handleReconnectAttempt() {
-      setConnected(false)
-      setConnecting(true)
-      setError(null)
-    }
+    // Delay connection attempt so the UI renders first
+    const timer = setTimeout(() => {
+      if (!mountedRef.current) return
+      try {
+        socket = getSocket()
+        socket.on('connect', handleConnect)
+        socket.on('disconnect', handleDisconnect)
+        socket.on('connect_error', handleConnectError)
 
-    function handleReconnect() {
-      setConnected(true)
-      setConnecting(false)
-      setError(null)
-      // [G25] Re-sync missed state after reconnection
-      socket.emit('agent:message', { agentId: '__sync__', message: 'sync' })
-    }
-
-    function handleReconnectFailed() {
-      setConnecting(false)
-      setError('Connection failed after maximum retries')
-    }
-
-    socket.on('connect', handleConnect)
-    socket.on('disconnect', handleDisconnect)
-    socket.on('connect_error', handleConnectError)
-    socket.io.on('reconnect_attempt', handleReconnectAttempt)
-    socket.io.on('reconnect', handleReconnect)
-    socket.io.on('reconnect_failed', handleReconnectFailed)
-
-    if (!socket.connected) {
-      setConnecting(true)
-      socket.connect()
-    }
+        if (!socket.connected) {
+          setConnecting(true)
+          socket.connect()
+        } else {
+          setConnected(true)
+        }
+      } catch {
+        setConnecting(false)
+      }
+    }, 500)
 
     return () => {
-      socket.off('connect', handleConnect)
-      socket.off('disconnect', handleDisconnect)
-      socket.off('connect_error', handleConnectError)
-      socket.io.off('reconnect_attempt', handleReconnectAttempt)
-      socket.io.off('reconnect', handleReconnect)
-      socket.io.off('reconnect_failed', handleReconnectFailed)
-      socket.disconnect()
+      mountedRef.current = false
+      clearTimeout(timer)
+      if (socket) {
+        socket.off('connect', handleConnect)
+        socket.off('disconnect', handleDisconnect)
+        socket.off('connect_error', handleConnectError)
+      }
     }
   }, [])
 
