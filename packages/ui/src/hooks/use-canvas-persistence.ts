@@ -60,6 +60,7 @@ export function useCanvasPersistence(): UseCanvasPersistenceReturn {
   const loadCanvas = useCallback(async (): Promise<{ nodes: Node[]; edges: Edge[] } | null> => {
     try {
       const wsId = await ensureWorkspace()
+      console.log('[canvas-persist] loadCanvas wsId=', wsId)
       if (!wsId) { setLoaded(true); return null }
 
       const layout = await apiGet<CanvasLayout | null>(`/api/workspaces/${wsId}/canvas`)
@@ -77,7 +78,11 @@ export function useCanvasPersistence(): UseCanvasPersistenceReturn {
 
   const doSave = useCallback(async (nodes: Node[], edges: Edge[]) => {
     const wsId = workspaceIdRef.current
-    if (!wsId || nodes.length === 0) return
+    if (!wsId || nodes.length === 0) {
+      console.log('[canvas-persist] skip save: wsId=', wsId, 'nodes=', nodes.length)
+      return
+    }
+    console.log('[canvas-persist] saving', nodes.length, 'nodes to workspace', wsId)
 
     setSaving(true)
     try {
@@ -99,8 +104,9 @@ export function useCanvasPersistence(): UseCanvasPersistenceReturn {
         })),
       })
       setLastSavedAt(new Date())
-    } catch {
-      // silent — next save will retry
+      console.log('[canvas-persist] saved OK')
+    } catch (err) {
+      console.error('[canvas-persist] save failed:', err)
     } finally {
       setSaving(false)
     }

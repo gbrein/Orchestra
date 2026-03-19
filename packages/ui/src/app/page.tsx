@@ -28,6 +28,7 @@ import { ChainConfig, type ChainStep, type ConditionalEdge } from '@/components/
 import { PrdEditor, type PrdData } from '@/components/panels/prd-editor'
 import { AssistantsList, type AssistantSummary } from '@/components/panels/assistants-list'
 import { GlobalSafetyPanel } from '@/components/panels/global-safety-panel'
+import { AgentDrawer } from '@/components/panels/agent-drawer'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { ComplexityContext, useComplexityState } from '@/hooks/use-complexity'
@@ -58,6 +59,7 @@ export default function Home() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [selectedAgent, setSelectedAgent] = useState<SelectedAgent | null>(null)
   const [chatOpen, setChatOpen] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const [marketplaceOpen, setMarketplaceOpen] = useState(false)
   const [discussionWizardOpen, setDiscussionWizardOpen] = useState(false)
   const [selectedDiscussion, setSelectedDiscussion] = useState<DiscussionTable | null>(null)
@@ -757,7 +759,7 @@ export default function Home() {
                 agentModel={selectedAgent.model}
                 onEdit={() => {
                   setChatOpen(false)
-                  // TODO: open AgentDrawer for this agent
+                  setDrawerOpen(true)
                 }}
               />
             ) : (
@@ -768,6 +770,48 @@ export default function Home() {
           </ErrorBoundary>
         </SheetContent>
       </Sheet>
+
+      {/* Agent Drawer (edit) */}
+      <ErrorBoundary>
+        <AgentDrawer
+          agent={selectedAgent ? ({
+            id: selectedAgent.id,
+            name: selectedAgent.name,
+            avatar: null,
+            description: selectedAgent.description ?? null,
+            persona: '',
+            purpose: selectedAgent.purpose ?? null,
+            scope: [],
+            allowedTools: [],
+            memoryEnabled: false,
+            model: selectedAgent.model ?? null,
+            status: selectedAgent.status,
+            loopEnabled: false,
+            loopCriteria: null,
+            maxIterations: 10,
+            teamEnabled: false,
+            canvasX: 0,
+            canvasY: 0,
+            createdAt: '',
+            updatedAt: '',
+          } as any) : null}
+          open={drawerOpen}
+          onOpenChange={setDrawerOpen}
+          onSave={(updates) => {
+            if (!selectedAgent) return
+            setNodes((prev) => prev.map((n) =>
+              n.id === selectedAgent.id
+                ? { ...n, data: { ...n.data, ...updates } }
+                : n,
+            ))
+            setDrawerOpen(false)
+          }}
+          onOpenMarketplace={() => {
+            setDrawerOpen(false)
+            setMarketplaceOpen(true)
+          }}
+        />
+      </ErrorBoundary>
 
       {/* Approval Dialog */}
       <ErrorBoundary>
