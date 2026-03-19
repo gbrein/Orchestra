@@ -171,6 +171,11 @@ export default function Home() {
       setEdges(savedEdges)
     }
     setShowHome(false)
+    setTimeout(() => {
+      viewRef.current?.fitView()
+      const z = viewRef.current?.getZoom()
+      if (z) setZoomLevel(Math.round(z * 100))
+    }, 300)
   }, [savedNodes, savedEdges])
 
   const showCanvas = !showHome && nodes.length > 0
