@@ -47,7 +47,16 @@
       "Bash(npx prisma:*)",
       "Bash(git remote:*)",
       "Bash(npm test:*)",
-      "Bash(npx vitest:*)"
+      "Bash(npx vitest:*)",
+      "Bash(npm:*)",
+      "Bash(grep -r \"from ''@/components/panels/workspace-switcher\\\\|from ''@/components/panels/discussions-list\\\\|from ''@/components/panels/history-panel\\\\|from ''@/components/panels/settings-panel\" src/)",
+      "Bash(grep:*)",
+      "Bash(curl -s http://localhost:3001/api/agents)",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s http://localhost:3001/api/health)",
+      "Bash(where claude:*)",
+      "Bash(where claude.cmd)",
+      "Bash(node -e \":*)"
     ]
   }
 }
