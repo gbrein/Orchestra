@@ -1,0 +1,74 @@
+import Fastify from 'fastify'
+import cors from '@fastify/cors'
+import { Server } from 'socket.io'
+import type { ClientToServerEvents, ServerToClientEvents } from '@orchestra/shared'
+import { checkPrerequisites } from './lib/prerequisites'
+
+const PORT = parseInt(process.env.PORT ?? '3001', 10)
+const UI_ORIGIN = process.env.UI_ORIGIN ?? 'http://localhost:3000'
+
+async function main() {
+  // [G2] Prerequisites validation
+  const prereqs = await checkPrerequisites()
+  if (!prereqs.allPassed) {
+    console.error('\n⚠ Prerequisites check failed:')
+    for (const failure of prereqs.failures) {
+      console.error(`  ✗ ${failure.name}: ${failure.message}`)
+      if (failure.fix) {
+        console.error(`    → Fix: ${failure.fix}`)
+      }
+    }
+    if (prereqs.critical) {
+      console.error('\nCritical prerequisites missing. Cannot start.')
+      process.exit(1)
+    }
+    console.warn('\nStarting with warnings...\n')
+  }
+
+  const app = Fastify({ logger: true })
+
+  await app.register(cors, { origin: UI_ORIGIN })
+
+  // Health check
+  app.get('/api/health', async () => ({
+    success: true,
+    data: {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      prerequisites: prereqs,
+    },
+  }))
+
+  // Socket.IO setup
+  const io = new Server<ClientToServerEvents, ServerToClientEvents>(app.server, {
+    cors: { origin: UI_ORIGIN },
+  })
+
+  io.on('connection', (socket) => {
+    app.log.info(`Client connected: ${socket.id}`)
+
+    socket.on('disconnect', () => {
+      app.log.info(`Client disconnected: ${socket.id}`)
+    })
+  })
+
+  // Graceful shutdown [G6]
+  const shutdown = async () => {
+    app.log.info('Shutting down gracefully...')
+    io.close()
+    await app.close()
+    process.exit(0)
+  }
+
+  process.on('SIGINT', shutdown)
+  process.on('SIGTERM', shutdown)
+
+  await app.listen({ port: PORT, host: '0.0.0.0' })
+  console.log(`\n🎵 Orchestra server running on http://localhost:${PORT}`)
+  console.log(`   Accepting connections from ${UI_ORIGIN}\n`)
+}
+
+main().catch((err) => {
+  console.error('Failed to start server:', err)
+  process.exit(1)
+})

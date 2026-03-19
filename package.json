@@ -1,0 +1,28 @@
+{
+  "name": "orchestra",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "dev:ui": "turbo dev --filter=@orchestra/ui",
+    "dev:server": "turbo dev --filter=@orchestra/server",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "db:migrate": "npx prisma migrate dev --schema=packages/server/prisma/schema.prisma",
+    "db:seed": "npx prisma db seed --schema=packages/server/prisma/schema.prisma",
+    "db:studio": "npx prisma studio --schema=packages/server/prisma/schema.prisma",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "setup": "npm install && docker-compose up -d && npm run db:migrate && npm run db:seed"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.0",
+    "prettier": "^3.5.0"
+  }
+}
