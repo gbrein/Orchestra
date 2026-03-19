@@ -330,8 +330,8 @@ function OrchestraCanvasInner({
         />
 
         <MiniMap
-          position="bottom-left"
-          className="!bottom-4 !left-4 overflow-hidden rounded-md border border-border !bg-card"
+          position="bottom-right"
+          className="!bottom-4 !right-4 overflow-hidden rounded-md border border-border !bg-card"
           nodeColor={(node) => {
             if (node.type === 'agent') return 'hsl(var(--primary))'
             if (node.type === 'skill') return 'hsl(var(--secondary-foreground))'

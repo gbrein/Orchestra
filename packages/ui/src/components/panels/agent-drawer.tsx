@@ -827,6 +827,17 @@ const TAB_LABELS: Record<DrawerTab, string> = {
   advanced: 'Advanced',
 }
 
+const TAB_MIN_TIER: Record<DrawerTab, 'simple' | 'standard' | 'full'> = {
+  settings: 'simple',
+  skills: 'simple',
+  safety: 'standard',
+  conversations: 'standard',
+  mcp: 'full',
+  advanced: 'full',
+}
+
+const TIER_ORDER = { simple: 0, standard: 1, full: 2 } as const
+
 /**
  * Complexity-aware: in Simple mode, only Settings + Skills tabs are shown.
  * In Standard mode, Safety is added. In Full Control, MCP + Advanced are also shown.
@@ -843,6 +854,8 @@ export function AgentDrawer({
   onOpenMcpManagement,
 }: AgentDrawerProps) {
   const [activeTab, setActiveTab] = useState<DrawerTab>('settings')
+  const { tier } = useComplexity()
+  const visibleTabs = ALL_TABS.filter((tab) => TIER_ORDER[tier] >= TIER_ORDER[TAB_MIN_TIER[tab]])
 
   useEffect(() => {
     if (agent) setActiveTab('settings')
@@ -895,7 +908,7 @@ export function AgentDrawer({
               className="flex min-h-0 flex-1 flex-col"
             >
               <TabsList className="mx-4 mt-3 w-auto justify-start rounded-none border-b bg-transparent p-0">
-                {ALL_TABS.map((tab) => (
+                {visibleTabs.map((tab) => (
                   <TabsTrigger
                     key={tab}
                     value={tab}

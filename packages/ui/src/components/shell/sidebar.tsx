@@ -10,6 +10,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { useComplexity } from '@/hooks/use-complexity'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -22,6 +23,7 @@ interface SidebarItem {
   readonly label: string
   readonly shortcut?: string
   readonly nodeType: NodeType
+  readonly minTier: 'simple' | 'standard' | 'full'
 }
 
 export interface SidebarProps {
@@ -37,12 +39,14 @@ export interface SidebarProps {
 // Constants
 // ---------------------------------------------------------------------------
 
+const TIER_ORDER = { simple: 0, standard: 1, full: 2 } as const
+
 const ITEMS: readonly SidebarItem[] = [
-  { icon: Bot, label: 'Assistants', shortcut: 'N', nodeType: 'agent' },
-  { icon: Puzzle, label: 'Skills', shortcut: 'S', nodeType: 'skill' },
-  { icon: Shield, label: 'Safety Rules', nodeType: 'safety' },
-  { icon: MessageSquare, label: 'Discussions', nodeType: 'discussion' },
-  { icon: Plug, label: 'Connections', nodeType: 'connection' },
+  { icon: Bot, label: 'Assistants', shortcut: 'N', nodeType: 'agent', minTier: 'simple' },
+  { icon: Puzzle, label: 'Skills', shortcut: 'S', nodeType: 'skill', minTier: 'simple' },
+  { icon: Shield, label: 'Safety Rules', nodeType: 'safety', minTier: 'standard' },
+  { icon: MessageSquare, label: 'Discussions', nodeType: 'discussion', minTier: 'standard' },
+  { icon: Plug, label: 'Connections', nodeType: 'connection', minTier: 'full' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -51,6 +55,8 @@ const ITEMS: readonly SidebarItem[] = [
 
 export function Sidebar({ onCreateAgent, onAssistantsClick, onSkillsClick, onSafetyClick, onDiscussionsClick, onConnectionsClick }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
+  const { tier } = useComplexity()
+  const visibleItems = ITEMS.filter((item) => TIER_ORDER[tier] >= TIER_ORDER[item.minTier])
 
   function handleDragStart(e: React.DragEvent<HTMLButtonElement>, nodeType: NodeType) {
     e.dataTransfer.setData(
@@ -84,7 +90,7 @@ export function Sidebar({ onCreateAgent, onAssistantsClick, onSkillsClick, onSaf
 
       {/* Node palette */}
       <nav className="flex flex-1 flex-col gap-1 p-2" aria-label="Node palette">
-        {ITEMS.map((item) => (
+        {visibleItems.map((item) => (
           <Tooltip key={item.label} delayDuration={0}>
             <TooltipTrigger asChild>
               <Button
