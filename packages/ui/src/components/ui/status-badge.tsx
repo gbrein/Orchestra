@@ -71,7 +71,7 @@ const SIZE_CLASSES = {
 // ─── Component ─────────────────────────────────────────────────────────────
 
 export function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {
-  const config = STATUS_CONFIG[status]
+  const config = STATUS_CONFIG[status] ?? STATUS_CONFIG.idle
   const sizes = SIZE_CLASSES[size]
 
   const ariaLabel = `Status: ${config.label}`
