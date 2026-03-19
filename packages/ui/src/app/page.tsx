@@ -7,6 +7,11 @@ import { Sidebar } from '@/components/shell/sidebar'
 import { TopBar } from '@/components/shell/top-bar'
 import { BottomBar } from '@/components/shell/bottom-bar'
 import { CanvasPlaceholder } from '@/components/canvas/canvas-placeholder'
+import { AgentCreateDialog } from '@/components/panels/agent-create-dialog'
+import { TemplateGallery } from '@/components/canvas/template-gallery'
+import { CommandPalette } from '@/components/shell/command-palette'
+import type { CreateAgentInput } from '@orchestra/shared'
+import { createAgentNode } from '@/lib/canvas-utils'
 import { OrchestraCanvas, type UndoRedoControls } from '@/components/canvas/orchestra-canvas'
 import { ShortcutOverlay } from '@/components/shell/shortcut-overlay'
 import { AgentChat } from '@/components/panels/agent-chat'
@@ -57,6 +62,10 @@ export default function Home() {
 
   // PRD editor state
   const [prdEditorOpen, setPrdEditorOpen] = useState(false)
+
+  const [createAgentOpen, setCreateAgentOpen] = useState(false)
+  const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false)
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
 
   const { connected, connecting, error: socketError } = useSocket()
 
@@ -114,11 +123,53 @@ export default function Home() {
   }, [])
 
   const handleCommandPalette = useCallback(() => {
-    // Placeholder: integrate command palette when available
+    setCommandPaletteOpen((prev) => !prev)
   }, [])
 
   const handleCreateAgent = useCallback(() => {
-    // Placeholder: open create-agent dialog when available
+    setCreateAgentOpen(true)
+  }, [])
+
+  const handleUseTemplate = useCallback(() => {
+    setTemplateGalleryOpen(true)
+  }, [])
+
+  const handleAgentCreated = useCallback((input: CreateAgentInput) => {
+    const node = createAgentNode(
+      { x: 300 + Math.random() * 200, y: 200 + Math.random() * 200 },
+      {
+        name: input.name,
+        description: input.description,
+        status: 'idle',
+        model: input.model,
+        purpose: input.purpose,
+      },
+    )
+    setNodes((prev) => [...prev, node])
+    setCreateAgentOpen(false)
+  }, [])
+
+  const handleTemplateSelected = useCallback((templateNodes: Node[], templateEdges: Edge[]) => {
+    setNodes(templateNodes)
+    setEdges(templateEdges)
+    setTemplateGalleryOpen(false)
+  }, [])
+
+  const handleDescribe = useCallback((description: string) => {
+    // Open create dialog with the description pre-filled
+    // For now, create a quick agent from the description
+    const name = description.length > 30 ? description.slice(0, 30) + '...' : description
+    const node = createAgentNode(
+      { x: 300, y: 250 },
+      {
+        name,
+        description,
+        status: 'idle',
+        model: 'sonnet',
+        purpose: 'general',
+      },
+    )
+    setNodes((prev) => [...prev, node])
   }, [])
 
   const handleToggleMarketplace = useCallback(() => {
@@ -178,6 +229,22 @@ export default function Home() {
       prev.map((n) => ({ ...n, selected: false })),
     )
   }, [])
+
+  const handleCommand = useCallback((commandId: string) => {
+    setCommandPaletteOpen(false)
+    switch (commandId) {
+      case 'assistant:create': handleCreateAgent(); break
+      case 'canvas:fit': break
+      case 'nav:skills': handleToggleMarketplace(); break
+      case 'nav:discussions': handleDiscussionsClick(); break
+      case 'nav:shortcuts': handleToggleShortcuts(); break
+      case 'template:code-review':
+      case 'template:content':
+      case 'template:research':
+        handleUseTemplate(); break
+      default: break
+    }
+  }, [handleCreateAgent, handleToggleMarketplace, handleDiscussionsClick, handleToggleShortcuts, handleUseTemplate])
 
   useKeyboardShortcuts({
     onUndo: handleUndo,
@@ -292,6 +359,7 @@ export default function Home() {
       />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
+          onCreateAgent={handleCreateAgent}
           onSkillsClick={handleToggleMarketplace}
           onDiscussionsClick={handleDiscussionsClick}
           onConnectionsClick={handleConnectionsClick}
@@ -310,7 +378,15 @@ export default function Home() {
               />
             </div>
 
-            {!showCanvas && <CanvasPlaceholder />}
+            {!showCanvas && (
+              <CanvasPlaceholder
+                onCreateAssistant={handleCreateAgent}
+                onStartDiscussion={handleDiscussionsClick}
+                onUseTemplate={handleUseTemplate}
+                onExploreSkills={handleToggleMarketplace}
+                onDescribe={handleDescribe}
+              />
+            )}
           </ErrorBoundary>
         </main>
       </div>
@@ -408,6 +484,31 @@ export default function Home() {
           onCreate={handleDiscussionCreate}
         />
       </ErrorBoundary>
+
+      {/* Agent Create Dialog */}
+      <ErrorBoundary>
+        <AgentCreateDialog
+          open={createAgentOpen}
+          onOpenChange={setCreateAgentOpen}
+          onCreate={handleAgentCreated}
+        />
+      </ErrorBoundary>
+
+      {/* Template Gallery */}
+      <ErrorBoundary>
+        <TemplateGallery
+          open={templateGalleryOpen}
+          onOpenChange={setTemplateGalleryOpen}
+          onSelectTemplate={handleTemplateSelected}
+        />
+      </ErrorBoundary>
+
+      {/* Command Palette */}
+      <CommandPalette
+        open={commandPaletteOpen}
+        onOpenChange={setCommandPaletteOpen}
+        onCommand={handleCommand}
+      />
 
       {/* Discussion Panel */}
       <ErrorBoundary>
