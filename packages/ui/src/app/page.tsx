@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from 'react'
 import type { Node, Edge } from '@xyflow/react'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { Sidebar } from '@/components/shell/sidebar'
-import { TopBar } from '@/components/shell/top-bar'
+import { TopBar, type TopBarTab } from '@/components/shell/top-bar'
 import { BottomBar } from '@/components/shell/bottom-bar'
 import { CanvasPlaceholder } from '@/components/canvas/canvas-placeholder'
 import { AgentCreateDialog } from '@/components/panels/agent-create-dialog'
@@ -19,6 +19,9 @@ import { ApprovalDialog } from '@/components/panels/approval-dialog'
 import { SkillMarketplace } from '@/components/panels/skill-marketplace'
 import { DiscussionWizard, type DiscussionAgent } from '@/components/panels/discussion-wizard'
 import { DiscussionPanel } from '@/components/panels/discussion-panel'
+import { DiscussionsList } from '@/components/panels/discussions-list'
+import { HistoryPanel } from '@/components/panels/history-panel'
+import { SettingsPanel } from '@/components/panels/settings-panel'
 import { McpManagement, type McpServer } from '@/components/panels/mcp-management'
 import { ChainConfig, type ChainStep, type ConditionalEdge } from '@/components/panels/chain-config'
 import { PrdEditor, type PrdData } from '@/components/panels/prd-editor'
@@ -52,6 +55,15 @@ export default function Home() {
   const [discussionWizardOpen, setDiscussionWizardOpen] = useState(false)
   const [selectedDiscussion, setSelectedDiscussion] = useState<DiscussionTable | null>(null)
   const [discussionPanelOpen, setDiscussionPanelOpen] = useState(false)
+
+  // New panel states
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [discussionsListOpen, setDiscussionsListOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<TopBarTab>('workspace')
+
+  // All discussions created during this session (local state)
+  const [discussions, setDiscussions] = useState<DiscussionTable[]>([])
 
   // MCP management state
   const [mcpManagementOpen, setMcpManagementOpen] = useState(false)
@@ -156,8 +168,6 @@ export default function Home() {
   }, [])
 
   const handleDescribe = useCallback((description: string) => {
-    // Open create dialog with the description pre-filled
-    // For now, create a quick agent from the description
     const name = description.length > 30 ? description.slice(0, 30) + '...' : description
     const node = createAgentNode(
       { x: 300, y: 250 },
@@ -176,8 +186,34 @@ export default function Home() {
     setMarketplaceOpen((prev) => !prev)
   }, [])
 
-  const handleDiscussionsClick = useCallback(() => {
+  // Sidebar "Discussions" → open DiscussionWizard directly (no list needed from sidebar)
+  const handleSidebarDiscussionsClick = useCallback(() => {
     setDiscussionWizardOpen(true)
+  }, [])
+
+  // TopBar "Discussions" tab → open the list panel
+  const handleTopBarDiscussionsClick = useCallback(() => {
+    setActiveTab('discussions')
+    setDiscussionsListOpen(true)
+    setHistoryOpen(false)
+  }, [])
+
+  // TopBar "History" tab → open history panel
+  const handleTopBarHistoryClick = useCallback(() => {
+    setActiveTab('history')
+    setHistoryOpen(true)
+    setDiscussionsListOpen(false)
+  }, [])
+
+  // TopBar "Settings" gear → open settings panel
+  const handleSettingsClick = useCallback(() => {
+    setSettingsOpen(true)
+  }, [])
+
+  // TopBar workspace change callback
+  const handleWorkspaceChange = useCallback((_id: string) => {
+    // In production, persist to server; for now just switch active tab back to workspace
+    setActiveTab('workspace')
   }, [])
 
   const handleConnectionsClick = useCallback(() => {
@@ -197,7 +233,13 @@ export default function Home() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }
+    setDiscussions((prev) => [...prev, provisional])
     setSelectedDiscussion(provisional)
+    setDiscussionPanelOpen(true)
+  }, [])
+
+  const handleSelectDiscussionFromList = useCallback((discussion: DiscussionTable) => {
+    setSelectedDiscussion(discussion)
     setDiscussionPanelOpen(true)
   }, [])
 
@@ -225,6 +267,9 @@ export default function Home() {
     setMcpManagementOpen(false)
     setChainConfigOpen(false)
     setPrdEditorOpen(false)
+    setSettingsOpen(false)
+    setDiscussionsListOpen(false)
+    setHistoryOpen(false)
     setNodes((prev) =>
       prev.map((n) => ({ ...n, selected: false })),
     )
@@ -236,7 +281,7 @@ export default function Home() {
       case 'assistant:create': handleCreateAgent(); break
       case 'canvas:fit': break
       case 'nav:skills': handleToggleMarketplace(); break
-      case 'nav:discussions': handleDiscussionsClick(); break
+      case 'nav:discussions': handleTopBarDiscussionsClick(); break
       case 'nav:shortcuts': handleToggleShortcuts(); break
       case 'template:code-review':
       case 'template:content':
@@ -244,7 +289,7 @@ export default function Home() {
         handleUseTemplate(); break
       default: break
     }
-  }, [handleCreateAgent, handleToggleMarketplace, handleDiscussionsClick, handleToggleShortcuts, handleUseTemplate])
+  }, [handleCreateAgent, handleToggleMarketplace, handleTopBarDiscussionsClick, handleToggleShortcuts, handleUseTemplate])
 
   useKeyboardShortcuts({
     onUndo: handleUndo,
@@ -327,7 +372,6 @@ export default function Home() {
 
   const handleChainExecute = useCallback(
     (steps: readonly ChainStep[], conditionalEdges: readonly ConditionalEdge[]) => {
-      // Real impl would emit to server via socket
       void steps
       void conditionalEdges
     },
@@ -337,7 +381,6 @@ export default function Home() {
   // ── PRD pipeline ──────────────────────────────────────────────────────
 
   const handlePrdStart = useCallback((prd: PrdData) => {
-    // Real impl would dispatch to server
     void prd
   }, [])
 
@@ -356,12 +399,17 @@ export default function Home() {
         onAcknowledgeAll={acknowledgeAll}
         onRemoveNotification={removeNotification}
         onReviewApproval={handleReviewApproval}
+        onWorkspaceChange={handleWorkspaceChange}
+        onDiscussionsClick={handleTopBarDiscussionsClick}
+        onHistoryClick={handleTopBarHistoryClick}
+        onSettingsClick={handleSettingsClick}
+        activeTab={activeTab}
       />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           onCreateAgent={handleCreateAgent}
           onSkillsClick={handleToggleMarketplace}
-          onDiscussionsClick={handleDiscussionsClick}
+          onDiscussionsClick={handleSidebarDiscussionsClick}
           onConnectionsClick={handleConnectionsClick}
         />
         <main className="relative flex-1 overflow-hidden">
@@ -381,7 +429,7 @@ export default function Home() {
             {!showCanvas && (
               <CanvasPlaceholder
                 onCreateAssistant={handleCreateAgent}
-                onStartDiscussion={handleDiscussionsClick}
+                onStartDiscussion={handleSidebarDiscussionsClick}
                 onUseTemplate={handleUseTemplate}
                 onExploreSkills={handleToggleMarketplace}
                 onDescribe={handleDescribe}
@@ -402,6 +450,42 @@ export default function Home() {
         open={shortcutsOpen}
         onOpenChange={setShortcutsOpen}
       />
+
+      {/* Settings Panel */}
+      <ErrorBoundary>
+        <SettingsPanel
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+        />
+      </ErrorBoundary>
+
+      {/* Discussions List */}
+      <ErrorBoundary>
+        <DiscussionsList
+          open={discussionsListOpen}
+          onOpenChange={(open) => {
+            setDiscussionsListOpen(open)
+            if (!open && activeTab === 'discussions') setActiveTab('workspace')
+          }}
+          discussions={discussions}
+          onSelectDiscussion={handleSelectDiscussionFromList}
+          onNewDiscussion={() => {
+            setDiscussionsListOpen(false)
+            setDiscussionWizardOpen(true)
+          }}
+        />
+      </ErrorBoundary>
+
+      {/* History Panel */}
+      <ErrorBoundary>
+        <HistoryPanel
+          open={historyOpen}
+          onOpenChange={(open) => {
+            setHistoryOpen(open)
+            if (!open && activeTab === 'history') setActiveTab('workspace')
+          }}
+        />
+      </ErrorBoundary>
 
       {/* Skill Marketplace */}
       <ErrorBoundary>
