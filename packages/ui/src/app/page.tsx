@@ -574,6 +574,7 @@ export default function Home() {
                 onUndoRedoReady={handleUndoRedoReady}
                 onViewReady={handleViewReady}
                 onNodeDoubleClick={handleNodeDoubleClick}
+                onZoomChange={setZoomLevel}
               />
             </div>
 
@@ -723,7 +724,6 @@ export default function Home() {
                 agentName={selectedAgent.name}
                 agentStatus={selectedAgent.status}
                 agentModel={selectedAgent.model}
-                onClose={handleChatClose}
               />
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

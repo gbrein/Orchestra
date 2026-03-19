@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import {
   ReactFlow,
-  Controls,
   MiniMap,
   Background,
   BackgroundVariant,
@@ -73,6 +72,7 @@ interface OrchestraCanvasInnerProps {
   onUndoRedoReady?: (controls: UndoRedoControls) => void
   onViewReady?: (controls: CanvasViewControls) => void
   onNodeDoubleClick?: (nodeId: string, nodeType: string) => void
+  onZoomChange?: (zoom: number) => void
 }
 
 export interface UndoRedoControls {
@@ -96,6 +96,7 @@ function OrchestraCanvasInner({
   onUndoRedoReady,
   onViewReady,
   onNodeDoubleClick,
+  onZoomChange,
 }: OrchestraCanvasInnerProps) {
   const [nodes, setNodes, handleNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, handleEdgesChange] = useEdgesState(initialEdges)
@@ -304,8 +305,12 @@ function OrchestraCanvasInner({
         onConnect={handleConnect}
         onNodeDragStart={handleNodeDragStart}
         onNodeDoubleClick={handleNodeDoubleClick}
+        onMoveEnd={(_event, viewport) => {
+          onZoomChange?.(Math.round(viewport.zoom * 100))
+        }}
         onInit={(instance) => {
           rfInstance.current = instance
+          onZoomChange?.(Math.round(instance.getZoom() * 100))
         }}
         nodeTypes={NODE_TYPES}
         edgeTypes={EDGE_TYPES}
@@ -324,14 +329,9 @@ function OrchestraCanvasInner({
           color="hsl(var(--border))"
         />
 
-        <Controls
-          position="bottom-right"
-          showInteractive={false}
-        />
-
         <MiniMap
-          position="bottom-right"
-          className="!bottom-24 !right-4 overflow-hidden rounded-md border border-border !bg-card"
+          position="bottom-left"
+          className="!bottom-4 !left-4 overflow-hidden rounded-md border border-border !bg-card"
           nodeColor={(node) => {
             if (node.type === 'agent') return 'hsl(var(--primary))'
             if (node.type === 'skill') return 'hsl(var(--secondary-foreground))'
@@ -355,6 +355,7 @@ export interface OrchestraCanvasProps {
   onUndoRedoReady?: (controls: UndoRedoControls) => void
   onViewReady?: (controls: CanvasViewControls) => void
   onNodeDoubleClick?: (nodeId: string, nodeType: string) => void
+  onZoomChange?: (zoom: number) => void
 }
 
 export function OrchestraCanvas({
@@ -364,6 +365,7 @@ export function OrchestraCanvas({
   onUndoRedoReady,
   onViewReady,
   onNodeDoubleClick,
+  onZoomChange,
 }: OrchestraCanvasProps) {
   return (
     <ReactFlowProvider>
@@ -374,6 +376,7 @@ export function OrchestraCanvas({
         onUndoRedoReady={onUndoRedoReady}
         onViewReady={onViewReady}
         onNodeDoubleClick={onNodeDoubleClick}
+        onZoomChange={onZoomChange}
       />
     </ReactFlowProvider>
   )

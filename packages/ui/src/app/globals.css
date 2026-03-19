@@ -94,11 +94,6 @@
   background: transparent;
 }
 
-.react-flow__controls {
-  bottom: 5rem !important;
-  right: 1rem !important;
-}
-
 .react-flow__attribution {
   display: none;
 }
