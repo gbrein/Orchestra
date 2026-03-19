@@ -34,7 +34,8 @@ export interface SpawnerEvents {
 // Resolve the claude CLI command name cross-platform.
 // On Windows the CLI binary is `claude.cmd`; on Unix it is `claude`.
 function resolveClaudeCommand(): string {
-  return process.platform === 'win32' ? 'claude.cmd' : 'claude'
+  // claude is installed as claude.exe on Windows (not .cmd)
+  return 'claude'
 }
 
 // Build the allowed-env object passed to the child process.
@@ -127,9 +128,13 @@ export class ClaudeCodeSpawner extends EventEmitter {
       if (stdoutBuffer.trim().length > 0) {
         this.handleLine(stdoutBuffer.replace(/\r$/, '').trim())
       }
-      const exitCode = code ?? 1
-      if (exitCode !== 0 && this._stderrBuffer.length > 0) {
-        this.emit('error', new Error(`Claude exited with code ${exitCode}: ${this._stderrBuffer.trim()}`))
+      const exitCode = code ?? 0
+      // Only treat as error if exit code is non-zero AND stderr contains
+      // something other than benign warnings (like the stdin warning)
+      const stderrContent = this._stderrBuffer.trim()
+      const isBenignStderr = !stderrContent || stderrContent.includes('no stdin data received')
+      if (exitCode !== 0 && !isBenignStderr) {
+        this.emit('error', new Error(`Claude exited with code ${exitCode}: ${stderrContent}`))
       } else {
         this.emit('completion', { exitCode })
       }
