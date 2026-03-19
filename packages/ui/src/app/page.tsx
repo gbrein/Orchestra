@@ -204,6 +204,12 @@ export default function Home() {
     setNodes(templateNodes)
     setEdges(templateEdges)
     setTemplateGalleryOpen(false)
+    // Auto-fit view after nodes render
+    setTimeout(() => {
+      viewRef.current?.fitView()
+      const z = viewRef.current?.getZoom()
+      if (z) setZoomLevel(Math.round(z * 100))
+    }, 200)
   }, [])
 
   const handleDescribe = useCallback((description: string) => {
@@ -487,6 +493,7 @@ export default function Home() {
             >
               <OrchestraCanvas
                 initialNodes={nodes}
+                initialEdges={edges}
                 onNodesChange={handleNodesChange}
                 onUndoRedoReady={handleUndoRedoReady}
                 onViewReady={handleViewReady}

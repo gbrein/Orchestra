@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import {
   ReactFlow,
   Controls,
@@ -102,6 +102,24 @@ function OrchestraCanvasInner({
   const rfInstance = useRef<ReactFlowInstance | null>(null)
   const reactFlowInstance = useReactFlow()
   const { setNodes: rfSetNodes, setEdges: rfSetEdges } = reactFlowInstance
+
+  // Sync when parent pushes new nodes/edges (e.g. template load, drag-drop from placeholder)
+  const prevInitialNodesRef = useRef(initialNodes)
+  const prevInitialEdgesRef = useRef(initialEdges)
+
+  useEffect(() => {
+    if (initialNodes !== prevInitialNodesRef.current) {
+      prevInitialNodesRef.current = initialNodes
+      setNodes(initialNodes)
+    }
+  }, [initialNodes, setNodes])
+
+  useEffect(() => {
+    if (initialEdges !== prevInitialEdgesRef.current) {
+      prevInitialEdgesRef.current = initialEdges
+      setEdges(initialEdges)
+    }
+  }, [initialEdges, setEdges])
 
   // ── View controls (zoom, fit) ──────────────────────────────────────────
   const viewControlsRef = useRef(false)
