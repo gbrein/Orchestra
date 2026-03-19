@@ -594,6 +594,8 @@ export default function Home() {
         onAcknowledgeAll={acknowledgeAll}
         onRemoveNotification={removeNotification}
         onReviewApproval={handleReviewApproval}
+        onHomeClick={() => setShowHome(true)}
+        onWorkspaceClick={goToWorkspace}
         onWorkspaceChange={handleWorkspaceChange}
         onDiscussionsClick={handleTopBarDiscussionsClick}
         onHistoryClick={handleTopBarHistoryClick}

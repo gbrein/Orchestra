@@ -21,7 +21,8 @@ export interface TopBarProps {
   readonly onAcknowledgeAll?: () => void
   readonly onRemoveNotification?: (id: string) => void
   readonly onReviewApproval?: (notification: OrchestraNotification) => void
-  // New callbacks
+  readonly onHomeClick?: () => void
+  readonly onWorkspaceClick?: () => void
   readonly onWorkspaceChange?: (id: string) => void
   readonly onDiscussionsClick?: () => void
   readonly onHistoryClick?: () => void
@@ -46,6 +47,8 @@ export function TopBar({
   onAcknowledgeAll,
   onRemoveNotification,
   onReviewApproval,
+  onHomeClick,
+  onWorkspaceClick,
   onWorkspaceChange,
   onDiscussionsClick,
   onHistoryClick,
@@ -101,12 +104,25 @@ export function TopBar({
           size="sm"
           className={cn(
             'h-7 text-xs',
+            activeTab === 'workspace' && !onHomeClick
+              ? 'font-medium text-foreground'
+              : 'text-muted-foreground',
+          )}
+          onClick={onHomeClick}
+        >
+          Home
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn(
+            'h-7 text-xs',
             activeTab === 'workspace'
               ? 'font-medium text-foreground'
               : 'text-muted-foreground',
           )}
           aria-current={activeTab === 'workspace' ? 'page' : undefined}
-          onClick={onDiscussionsClick ? undefined : undefined}
+          onClick={onWorkspaceClick}
         >
           Workspace
         </Button>
