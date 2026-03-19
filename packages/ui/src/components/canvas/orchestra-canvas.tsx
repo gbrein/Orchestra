@@ -25,6 +25,7 @@ import '@xyflow/react/dist/style.css'
 import { AgentNode } from './nodes/agent-node'
 import { SkillNode } from './nodes/skill-node'
 import { PolicyNode } from './nodes/policy-node'
+import { McpNode, type McpNodeData } from './nodes/mcp-node'
 import { OrchestraEdge, type OrchestraEdgeData } from './edges/orchestra-edge'
 import {
   isValidConnection,
@@ -41,6 +42,7 @@ const NODE_TYPES: NodeTypes = {
   agent: AgentNode,
   skill: SkillNode,
   policy: PolicyNode,
+  mcp: McpNode,
 }
 
 const EDGE_TYPES: EdgeTypes = {
@@ -52,7 +54,11 @@ const EDGE_TYPES: EdgeTypes = {
 function resolveEdgeType(
   sourceNode: Node | undefined,
 ): OrchestraEdgeData['edgeType'] {
-  if (sourceNode?.type === 'skill' || sourceNode?.type === 'policy') {
+  if (
+    sourceNode?.type === 'skill' ||
+    sourceNode?.type === 'policy' ||
+    sourceNode?.type === 'mcp'
+  ) {
     return 'association'
   }
   return 'flow'
@@ -122,8 +128,11 @@ function OrchestraCanvasInner({
       const sourceNode = nodes.find((n) => n.id === connection.source)
       const targetNode = nodes.find((n) => n.id === connection.target)
 
+      // skill / policy / mcp nodes may only connect to agent targets
       if (
-        (sourceNode?.type === 'skill' || sourceNode?.type === 'policy') &&
+        (sourceNode?.type === 'skill' ||
+          sourceNode?.type === 'policy' ||
+          sourceNode?.type === 'mcp') &&
         targetNode?.type !== 'agent'
       ) {
         return
@@ -205,6 +214,13 @@ function OrchestraCanvasInner({
           level: (parsedData['level'] as PolicyNodeData['level'] | undefined) ?? 'agent',
         }
         newNode = { id: crypto.randomUUID(), type: 'policy', position, data: policyData }
+      } else if (dragType === DRAG_TYPES.MCP) {
+        const mcpData: McpNodeData = {
+          name: (parsedData['name'] as string | undefined) ?? 'MCP Server',
+          serverType: (parsedData['serverType'] as McpNodeData['serverType'] | undefined) ?? 'stdio',
+          description: parsedData['description'] as string | undefined,
+        }
+        newNode = { id: crypto.randomUUID(), type: 'mcp', position, data: mcpData }
       } else {
         return
       }
@@ -277,6 +293,7 @@ function OrchestraCanvasInner({
             if (node.type === 'agent') return 'hsl(var(--primary))'
             if (node.type === 'skill') return 'hsl(var(--secondary-foreground))'
             if (node.type === 'policy') return 'hsl(217 91% 60%)'
+            if (node.type === 'mcp') return 'hsl(271 91% 65%)'
             return 'hsl(var(--muted-foreground))'
           }}
           maskColor="hsl(var(--background) / 0.7)"

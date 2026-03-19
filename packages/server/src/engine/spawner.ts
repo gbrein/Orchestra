@@ -1,6 +1,7 @@
 import { spawn, ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
 import type { TokenUsage } from '@orchestra/shared'
+import type { MergedMcpConfig } from './mcp-config-builder'
 
 export interface SpawnOptions {
   readonly agentId: string
@@ -13,6 +14,7 @@ export interface SpawnOptions {
   readonly permissionMode?: string
   readonly maxBudgetUsd?: number
   readonly env?: Record<string, string>
+  readonly mcpConfig?: MergedMcpConfig
 }
 
 export interface StreamEvent {
@@ -208,6 +210,12 @@ export class ClaudeCodeSpawner extends EventEmitter {
 
     if (options.maxBudgetUsd !== undefined) {
       args.push('--max-budget-usd', String(options.maxBudgetUsd))
+    }
+
+    if (options.mcpConfig && Object.keys(options.mcpConfig.mcpServers).length > 0) {
+      // Serialize only the mcpServers map — conflicts are internal metadata
+      const serialized = JSON.stringify({ mcpServers: options.mcpConfig.mcpServers })
+      args.push('--mcp-config', serialized)
     }
 
     // The initial message is the final positional argument

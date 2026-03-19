@@ -28,6 +28,9 @@ import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import { ModelSelector } from './model-selector'
 import { AgentSkillsTab } from './agent-skills-tab'
+import { AgentMcpTab, type AgentMcpAssignment } from './agent-mcp-tab'
+import { LoopConfig, type LoopConfigValue } from './loop-config'
+import type { McpServer } from './mcp-management'
 import {
   type Agent,
   type AgentPurpose,
@@ -46,9 +49,15 @@ export interface AgentDrawerProps {
   readonly onOpenChange: (open: boolean) => void
   readonly onSave: (updates: Partial<Agent>) => void
   readonly onOpenMarketplace?: () => void
+  readonly mcpServers?: readonly McpServer[]
+  readonly mcpAssignments?: readonly AgentMcpAssignment[]
+  readonly onMcpToggle?: (agentId: string, serverId: string, assigned: boolean) => void
+  readonly onOpenMcpManagement?: () => void
 }
 
 type SafetyLevel = 'cautious' | 'balanced' | 'autonomous'
+
+type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions'
 
 interface ConversationRow {
   readonly id: string
@@ -80,6 +89,16 @@ const CAPABILITY_OPTIONS: readonly { key: string; label: string }[] = [
   { key: 'browse_web', label: 'Browse web' },
 ]
 
+const PERMISSION_MODE_OPTIONS: readonly {
+  value: PermissionMode
+  label: string
+  description: string
+}[] = [
+  { value: 'default', label: 'Default', description: 'Standard permission checks' },
+  { value: 'acceptEdits', label: 'Accept Edits', description: 'Auto-accept file edits' },
+  { value: 'bypassPermissions', label: 'Bypass All', description: 'Skip all permission prompts' },
+]
+
 const STATUS_LABEL: Record<Agent['status'], string> = {
   idle: 'Idle',
   running: 'Running',
@@ -108,7 +127,6 @@ function getSafetyLevel(allowedTools: readonly string[]): SafetyLevel {
 function getToolsForSafetyLevel(level: SafetyLevel, current: readonly string[]): readonly string[] {
   if (level === 'cautious') return []
   if (level === 'autonomous') return ['*']
-  // balanced — keep non-wildcard tools but strip wildcard
   return current.filter((t) => t !== '*')
 }
 
@@ -121,10 +139,9 @@ function formatDate(iso: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components
+// Settings Tab
 // ---------------------------------------------------------------------------
 
-// Settings Tab
 function SettingsTab({
   agent,
   onSave,
@@ -154,7 +171,6 @@ function SettingsTab({
 
   return (
     <div className="flex flex-col gap-5 py-4">
-      {/* Name */}
       <div className="flex flex-col gap-1.5">
         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           Name
@@ -167,7 +183,6 @@ function SettingsTab({
         />
       </div>
 
-      {/* Description */}
       <div className="flex flex-col gap-1.5">
         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           Description
@@ -182,7 +197,6 @@ function SettingsTab({
         />
       </div>
 
-      {/* Personality / Persona */}
       <div className="flex flex-col gap-1.5">
         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           {TERMS.persona.en}
@@ -200,7 +214,6 @@ function SettingsTab({
         </p>
       </div>
 
-      {/* Purpose */}
       <div className="flex flex-col gap-1.5">
         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           Purpose
@@ -226,7 +239,6 @@ function SettingsTab({
 
       <Separator />
 
-      {/* Model selector */}
       <div className="flex flex-col gap-2">
         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           Model
@@ -239,7 +251,6 @@ function SettingsTab({
         />
       </div>
 
-      {/* Save button */}
       {isDirty && (
         <Button onClick={handleSave} size="sm" className="self-end">
           Save changes
@@ -249,7 +260,10 @@ function SettingsTab({
   )
 }
 
-// Skills Tab — delegates to AgentSkillsTab component
+// ---------------------------------------------------------------------------
+// Skills Tab
+// ---------------------------------------------------------------------------
+
 function SkillsTab({
   agentId,
   onOpenMarketplace,
@@ -300,7 +314,10 @@ function SkillsTab({
   )
 }
 
+// ---------------------------------------------------------------------------
 // Safety Tab
+// ---------------------------------------------------------------------------
+
 function SafetyTab({
   agent,
   onSave,
@@ -321,8 +338,6 @@ function SafetyTab({
     JSON.stringify({ allowedTools: agent.allowedTools, scope: agent.scope }, null, 2),
   )
   const [rawError, setRawError] = useState<string | null>(null)
-
-  const isDirty = true // simplified — always allow save
 
   const SAFETY_OPTIONS: readonly { value: SafetyLevel; label: string; description: string }[] = [
     {
@@ -382,7 +397,6 @@ function SafetyTab({
 
   return (
     <div className="flex flex-col gap-5 py-4">
-      {/* Safety level */}
       <div className="flex flex-col gap-2">
         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           Safety Level
@@ -421,7 +435,6 @@ function SafetyTab({
 
       <Separator />
 
-      {/* Access / Scope */}
       <div className="flex flex-col gap-2">
         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           {TERMS.scope.en} Paths
@@ -474,7 +487,6 @@ function SafetyTab({
 
       <Separator />
 
-      {/* Capabilities */}
       <div className="flex flex-col gap-2">
         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           {TERMS.allowedTools.en}
@@ -511,7 +523,6 @@ function SafetyTab({
         </div>
       </div>
 
-      {/* Advanced toggle */}
       <button
         type="button"
         onClick={() => setShowAdvanced((prev) => !prev)}
@@ -547,9 +558,11 @@ function SafetyTab({
   )
 }
 
+// ---------------------------------------------------------------------------
 // Conversations Tab
+// ---------------------------------------------------------------------------
+
 function ConversationsTab({ agentId }: { readonly agentId: string }) {
-  // In a real app this would be fetched from the server
   const conversations: ConversationRow[] = []
 
   if (conversations.length === 0) {
@@ -603,13 +616,229 @@ function ConversationsTab({ agentId }: { readonly agentId: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// MCP Tab wrapper
+// ---------------------------------------------------------------------------
+
+function McpTab({
+  agentId,
+  mcpServers,
+  mcpAssignments,
+  onToggle,
+  onOpenManagement,
+}: {
+  readonly agentId: string
+  readonly mcpServers: readonly McpServer[]
+  readonly mcpAssignments: readonly AgentMcpAssignment[]
+  readonly onToggle: (serverId: string, assigned: boolean) => void
+  readonly onOpenManagement: () => void
+}) {
+  return (
+    <AgentMcpTab
+      agentId={agentId}
+      allServers={mcpServers}
+      assignments={mcpAssignments}
+      onToggle={onToggle}
+      onOpenManagement={onOpenManagement}
+    />
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Advanced Tab
+// ---------------------------------------------------------------------------
+
+function AdvancedTab({
+  agent,
+  onSave,
+}: {
+  readonly agent: Agent
+  readonly onSave: (updates: Partial<Agent>) => void
+}) {
+  const [loopValue, setLoopValue] = useState<LoopConfigValue>({
+    loopEnabled: agent.loopEnabled,
+    loopCriteria: agent.loopCriteria,
+    maxIterations: agent.maxIterations,
+  })
+  const [teamEnabled, setTeamEnabled] = useState(agent.teamEnabled)
+  const [modelOverride, setModelOverride] = useState<string>(agent.model ?? '')
+  const [maxBudget, setMaxBudget] = useState<string>('')
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>('default')
+
+  function handleLoopChange(val: LoopConfigValue) {
+    setLoopValue(val)
+    onSave({
+      loopEnabled: val.loopEnabled,
+      loopCriteria: val.loopCriteria ?? undefined,
+      maxIterations: val.maxIterations,
+    })
+  }
+
+  function handleTeamToggle() {
+    const next = !teamEnabled
+    setTeamEnabled(next)
+    onSave({ teamEnabled: next })
+  }
+
+  return (
+    <div className="flex flex-col gap-5 py-4">
+      {/* Loop configuration */}
+      <LoopConfig value={loopValue} onChange={handleLoopChange} />
+
+      <Separator />
+
+      {/* Agent Teams */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-0.5">
+          <p className="text-sm font-medium">Agent Teams</p>
+          <p className="text-xs text-muted-foreground">
+            Allow this agent to coordinate with other agents
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={teamEnabled}
+          aria-label={teamEnabled ? 'Disable agent teams' : 'Enable agent teams'}
+          onClick={handleTeamToggle}
+          className={cn(
+            'relative h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
+            teamEnabled ? 'bg-primary' : 'bg-muted',
+          )}
+        >
+          <span
+            className={cn(
+              'block h-4 w-4 rounded-full bg-white shadow-sm transition-transform',
+              teamEnabled ? 'translate-x-4' : 'translate-x-0',
+            )}
+          />
+        </button>
+      </div>
+
+      <Separator />
+
+      {/* Model override */}
+      <div className="flex flex-col gap-1.5">
+        <label
+          htmlFor="adv-model-override"
+          className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+        >
+          Model Override
+        </label>
+        <Input
+          id="adv-model-override"
+          value={modelOverride}
+          onChange={(e) => setModelOverride(e.target.value)}
+          placeholder="claude-3-5-sonnet-20241022"
+          className="font-mono text-xs"
+        />
+        <p className="text-[11px] text-muted-foreground">
+          Enter a full model ID to override the tier selection above.
+        </p>
+      </div>
+
+      {/* Max budget */}
+      <div className="flex flex-col gap-1.5">
+        <label
+          htmlFor="adv-max-budget"
+          className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+        >
+          Max Budget (USD)
+        </label>
+        <div className="relative">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+            $
+          </span>
+          <Input
+            id="adv-max-budget"
+            type="number"
+            min={0}
+            step={0.01}
+            value={maxBudget}
+            onChange={(e) => setMaxBudget(e.target.value)}
+            placeholder="0.00"
+            className="pl-7 font-mono text-xs"
+          />
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Agent will stop and await approval once this budget is reached.
+        </p>
+      </div>
+
+      <Separator />
+
+      {/* Permission mode */}
+      <div className="flex flex-col gap-2">
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          Permission Mode
+        </label>
+        <div className="flex flex-col gap-2" role="radiogroup" aria-label="Permission mode">
+          {PERMISSION_MODE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={permissionMode === opt.value}
+              onClick={() => setPermissionMode(opt.value)}
+              className={cn(
+                'flex items-start gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50',
+                permissionMode === opt.value
+                  ? 'border-primary bg-primary/5'
+                  : 'border-border bg-card',
+              )}
+            >
+              <div
+                className={cn(
+                  'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+                  permissionMode === opt.value
+                    ? 'border-primary'
+                    : 'border-muted-foreground/50',
+                )}
+              >
+                {permissionMode === opt.value && (
+                  <div className="h-2 w-2 rounded-full bg-primary" />
+                )}
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium">{opt.label}</span>
+                <span className="text-xs text-muted-foreground">{opt.description}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
 
-export function AgentDrawer({ agent, open, onOpenChange, onSave, onOpenMarketplace }: AgentDrawerProps) {
-  const [activeTab, setActiveTab] = useState('settings')
+const ALL_TABS = ['settings', 'skills', 'mcp', 'safety', 'conversations', 'advanced'] as const
+type DrawerTab = (typeof ALL_TABS)[number]
 
-  // Reset to settings tab when a new agent is selected
+const TAB_LABELS: Record<DrawerTab, string> = {
+  settings: 'Settings',
+  skills: 'Skills',
+  mcp: 'MCP',
+  safety: 'Safety',
+  conversations: 'Convos',
+  advanced: 'Advanced',
+}
+
+export function AgentDrawer({
+  agent,
+  open,
+  onOpenChange,
+  onSave,
+  onOpenMarketplace,
+  mcpServers = [],
+  mcpAssignments = [],
+  onMcpToggle,
+  onOpenMcpManagement,
+}: AgentDrawerProps) {
+  const [activeTab, setActiveTab] = useState<DrawerTab>('settings')
+
   useEffect(() => {
     if (agent) setActiveTab('settings')
   }, [agent?.id])
@@ -657,20 +886,20 @@ export function AgentDrawer({ agent, open, onOpenChange, onSave, onOpenMarketpla
             {/* Tabs */}
             <Tabs
               value={activeTab}
-              onValueChange={setActiveTab}
+              onValueChange={(v) => setActiveTab(v as DrawerTab)}
               className="flex min-h-0 flex-1 flex-col"
             >
               <TabsList className="mx-4 mt-3 w-auto justify-start rounded-none border-b bg-transparent p-0">
-                {(['settings', 'skills', 'safety', 'conversations'] as const).map((tab) => (
+                {ALL_TABS.map((tab) => (
                   <TabsTrigger
                     key={tab}
                     value={tab}
                     className={cn(
-                      'rounded-none border-b-2 border-transparent px-3 py-2 text-xs font-medium capitalize',
+                      'rounded-none border-b-2 border-transparent px-3 py-2 text-xs font-medium',
                       'data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none',
                     )}
                   >
-                    {tab === 'conversations' ? 'Convos' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    {TAB_LABELS[tab]}
                   </TabsTrigger>
                 ))}
               </TabsList>
@@ -687,12 +916,28 @@ export function AgentDrawer({ agent, open, onOpenChange, onSave, onOpenMarketpla
                   />
                 </TabsContent>
 
+                <TabsContent value="mcp" className="mt-0">
+                  <McpTab
+                    agentId={agent.id}
+                    mcpServers={mcpServers}
+                    mcpAssignments={mcpAssignments}
+                    onToggle={(serverId, assigned) =>
+                      onMcpToggle?.(agent.id, serverId, assigned)
+                    }
+                    onOpenManagement={onOpenMcpManagement ?? (() => undefined)}
+                  />
+                </TabsContent>
+
                 <TabsContent value="safety" className="mt-0">
                   <SafetyTab agent={agent} onSave={onSave} />
                 </TabsContent>
 
                 <TabsContent value="conversations" className="mt-0">
                   <ConversationsTab agentId={agent.id} />
+                </TabsContent>
+
+                <TabsContent value="advanced" className="mt-0">
+                  <AdvancedTab agent={agent} onSave={onSave} />
                 </TabsContent>
               </div>
             </Tabs>

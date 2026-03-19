@@ -72,13 +72,18 @@ export async function canvasRoutes(app: FastifyInstance) {
         ? await prisma.canvasLayout.update({
             where: { id: existing.id },
             data: {
-              viewport: body.viewport,
-              nodes: body.nodes,
-              edges: body.edges,
+              viewport: body.viewport as any,
+              nodes: body.nodes as any,
+              edges: body.edges as any,
             },
           })
         : await prisma.canvasLayout.create({
-            data: { workspaceId, ...body },
+            data: {
+              workspaceId,
+              viewport: body.viewport as any,
+              nodes: body.nodes as any,
+              edges: body.edges as any,
+            },
           })
 
       sendSuccess(reply, layout)

@@ -115,6 +115,7 @@ export const DRAG_TYPES = {
   AGENT: 'application/orchestra-agent',
   SKILL: 'application/orchestra-skill',
   POLICY: 'application/orchestra-policy',
+  MCP: 'application/orchestra-mcp',
 } as const
 
 export type DragType = (typeof DRAG_TYPES)[keyof typeof DRAG_TYPES]

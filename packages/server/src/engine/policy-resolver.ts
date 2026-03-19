@@ -66,7 +66,7 @@ export async function resolvePolicy(
   // Merge in load order — session cannot relax global restrictions because
   // each merge call only tightens values (minimum, union, escalation).
   for (const policy of [...globalPolicies, ...agentPolicies, ...sessionPolicies]) {
-    mergePolicy(state, policy as Policy)
+    mergePolicy(state, policy as unknown as Policy)
   }
 
   return buildResult(state)

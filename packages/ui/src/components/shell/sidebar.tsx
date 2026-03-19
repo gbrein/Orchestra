@@ -28,6 +28,7 @@ export interface SidebarProps {
   readonly onCreateAgent?: () => void
   readonly onSkillsClick?: () => void
   readonly onDiscussionsClick?: () => void
+  readonly onConnectionsClick?: () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -46,7 +47,7 @@ const ITEMS: readonly SidebarItem[] = [
 // Component
 // ---------------------------------------------------------------------------
 
-export function Sidebar({ onCreateAgent, onSkillsClick, onDiscussionsClick }: SidebarProps) {
+export function Sidebar({ onCreateAgent, onSkillsClick, onDiscussionsClick, onConnectionsClick }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
 
   function handleDragStart(e: React.DragEvent<HTMLButtonElement>, nodeType: NodeType) {
@@ -95,6 +96,8 @@ export function Sidebar({ onCreateAgent, onSkillsClick, onDiscussionsClick }: Si
                     ? onSkillsClick
                     : item.nodeType === 'discussion'
                     ? onDiscussionsClick
+                    : item.nodeType === 'connection'
+                    ? onConnectionsClick
                     : undefined
                 }
                 aria-label={item.label}

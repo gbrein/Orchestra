@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useRef, useState } from 'react'
-import type { Node } from '@xyflow/react'
+import type { Node, Edge } from '@xyflow/react'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { Sidebar } from '@/components/shell/sidebar'
 import { TopBar } from '@/components/shell/top-bar'
@@ -14,6 +14,9 @@ import { ApprovalDialog } from '@/components/panels/approval-dialog'
 import { SkillMarketplace } from '@/components/panels/skill-marketplace'
 import { DiscussionWizard, type DiscussionAgent } from '@/components/panels/discussion-wizard'
 import { DiscussionPanel } from '@/components/panels/discussion-panel'
+import { McpManagement, type McpServer } from '@/components/panels/mcp-management'
+import { ChainConfig, type ChainStep, type ConditionalEdge } from '@/components/panels/chain-config'
+import { PrdEditor, type PrdData } from '@/components/panels/prd-editor'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { useSocket } from '@/hooks/use-socket'
 import { useNotifications } from '@/hooks/use-notifications'
@@ -35,6 +38,7 @@ interface SelectedAgent {
 
 export default function Home() {
   const [nodes, setNodes] = useState<Node[]>([])
+  const [edges, setEdges] = useState<Edge[]>([])
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [selectedAgent, setSelectedAgent] = useState<SelectedAgent | null>(null)
   const [chatOpen, setChatOpen] = useState(false)
@@ -42,6 +46,16 @@ export default function Home() {
   const [discussionWizardOpen, setDiscussionWizardOpen] = useState(false)
   const [selectedDiscussion, setSelectedDiscussion] = useState<DiscussionTable | null>(null)
   const [discussionPanelOpen, setDiscussionPanelOpen] = useState(false)
+
+  // MCP management state
+  const [mcpManagementOpen, setMcpManagementOpen] = useState(false)
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([])
+
+  // Chain config state
+  const [chainConfigOpen, setChainConfigOpen] = useState(false)
+
+  // PRD editor state
+  const [prdEditorOpen, setPrdEditorOpen] = useState(false)
 
   const { connected, connecting, error: socketError } = useSocket()
 
@@ -61,7 +75,6 @@ export default function Home() {
     dismissDialog,
   } = useApprovals()
 
-  // Undo/redo controls are surfaced from the canvas via callback
   const undoRedoRef = useRef<UndoRedoControls | null>(null)
 
   const handleUndoRedoReady = useCallback((controls: UndoRedoControls) => {
@@ -70,7 +83,6 @@ export default function Home() {
 
   const showCanvas = nodes.length > 0
 
-  // Derive running agent count from canvas nodes
   const runningAgentCount = nodes.filter(
     (n) => n.type === 'agent' && (n.data as AgentNodeData).status === 'running',
   ).length
@@ -116,9 +128,11 @@ export default function Home() {
     setDiscussionWizardOpen(true)
   }, [])
 
+  const handleConnectionsClick = useCallback(() => {
+    setMcpManagementOpen(true)
+  }, [])
+
   const handleDiscussionCreate = useCallback((config: CreateDiscussionInput) => {
-    // Build a provisional DiscussionTable from the wizard input so the panel
-    // can open immediately while the server persists the record.
     const provisional: DiscussionTable = {
       id: crypto.randomUUID(),
       name: config.name,
@@ -135,7 +149,6 @@ export default function Home() {
     setDiscussionPanelOpen(true)
   }, [])
 
-  // Derive DiscussionAgent list from canvas agent nodes
   const discussionAgents: DiscussionAgent[] = nodes
     .filter((n) => n.type === 'agent')
     .map((n) => {
@@ -157,6 +170,9 @@ export default function Home() {
     setMarketplaceOpen(false)
     setDiscussionWizardOpen(false)
     setDiscussionPanelOpen(false)
+    setMcpManagementOpen(false)
+    setChainConfigOpen(false)
+    setPrdEditorOpen(false)
     setNodes((prev) =>
       prev.map((n) => ({ ...n, selected: false })),
     )
@@ -199,28 +215,18 @@ export default function Home() {
     setChatOpen(false)
   }, [])
 
-  // ── Approval dialog handlers ───────────────────────────────────────────
+  // ── Approval dialog ────────────────────────────────────────────────────
 
   const handleApprovalDialogChange = useCallback(
     (open: boolean) => {
-      if (!open) {
-        dismissDialog()
-      }
+      if (!open) dismissDialog()
     },
     [dismissDialog],
   )
 
-  // "Review" button in notification panel opens the approval dialog for
-  // the relevant agent. The useApprovals hook holds the queue; clicking
-  // Review simply re-surfaces the dialog if it was dismissed.
   const handleReviewApproval = useCallback((_notification: OrchestraNotification) => {
-    // currentApproval is tracked by useApprovals; the ApprovalDialog
-    // will re-open on the next approval event. Future work can
-    // deep-link into a specific pending approval from here.
     void _notification
   }, [])
-
-  // ── Approval data conversion ───────────────────────────────────────────
 
   const approvalDialogData = currentApproval
     ? {
@@ -232,6 +238,46 @@ export default function Home() {
         toolName: currentApproval.toolName,
       }
     : null
+
+  // ── MCP server CRUD ────────────────────────────────────────────────────
+
+  const handleMcpAdd = useCallback((server: Omit<McpServer, 'id'>) => {
+    setMcpServers((prev) => [...prev, { ...server, id: crypto.randomUUID() }])
+  }, [])
+
+  const handleMcpEdit = useCallback((id: string, updates: Omit<McpServer, 'id'>) => {
+    setMcpServers((prev) =>
+      prev.map((s) => (s.id === id ? { ...updates, id } : s)),
+    )
+  }, [])
+
+  const handleMcpDelete = useCallback((id: string) => {
+    setMcpServers((prev) => prev.filter((s) => s.id !== id))
+  }, [])
+
+  // ── Chain execution ────────────────────────────────────────────────────
+
+  const handleChainExecute = useCallback(
+    (steps: readonly ChainStep[], conditionalEdges: readonly ConditionalEdge[]) => {
+      // Real impl would emit to server via socket
+      void steps
+      void conditionalEdges
+    },
+    [],
+  )
+
+  // ── PRD pipeline ──────────────────────────────────────────────────────
+
+  const handlePrdStart = useCallback((prd: PrdData) => {
+    // Real impl would dispatch to server
+    void prd
+  }, [])
+
+  // ── Canvas nodes/edges sync ───────────────────────────────────────────
+
+  const handleNodesChange = useCallback((updated: Node[]) => {
+    setNodes(updated)
+  }, [])
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -247,18 +293,16 @@ export default function Home() {
         <Sidebar
           onSkillsClick={handleToggleMarketplace}
           onDiscussionsClick={handleDiscussionsClick}
+          onConnectionsClick={handleConnectionsClick}
         />
         <main className="relative flex-1 overflow-hidden">
-          {/* Canvas is always mounted so React Flow can initialise; it is
-              hidden (not unmounted) when the placeholder is shown so we don't
-              lose node state on first drop. */}
           <div
             className={showCanvas ? 'h-full w-full' : 'hidden'}
             aria-hidden={!showCanvas}
           >
             <OrchestraCanvas
               initialNodes={nodes}
-              onNodesChange={setNodes}
+              onNodesChange={handleNodesChange}
               onUndoRedoReady={handleUndoRedoReady}
               onNodeDoubleClick={handleNodeDoubleClick}
             />
@@ -280,13 +324,39 @@ export default function Home() {
         onOpenChange={setShortcutsOpen}
       />
 
-      {/* Skill Marketplace Sheet — opens from sidebar or command palette */}
+      {/* Skill Marketplace */}
       <SkillMarketplace
         open={marketplaceOpen}
         onOpenChange={setMarketplaceOpen}
       />
 
-      {/* AgentChat Sheet — opens when an agent node is double-clicked */}
+      {/* MCP Management */}
+      <McpManagement
+        open={mcpManagementOpen}
+        onOpenChange={setMcpManagementOpen}
+        servers={mcpServers}
+        onAdd={handleMcpAdd}
+        onEdit={handleMcpEdit}
+        onDelete={handleMcpDelete}
+      />
+
+      {/* Chain Config */}
+      <ChainConfig
+        open={chainConfigOpen}
+        onOpenChange={setChainConfigOpen}
+        nodes={nodes}
+        edges={edges}
+        onExecute={handleChainExecute}
+      />
+
+      {/* PRD Editor */}
+      <PrdEditor
+        open={prdEditorOpen}
+        onOpenChange={setPrdEditorOpen}
+        onStartPipeline={handlePrdStart}
+      />
+
+      {/* AgentChat */}
       <Sheet open={chatOpen} onOpenChange={setChatOpen}>
         <SheetContent
           side="right"
@@ -305,7 +375,7 @@ export default function Home() {
         </SheetContent>
       </Sheet>
 
-      {/* Approval Dialog — opens when an agent requests permission */}
+      {/* Approval Dialog */}
       <ApprovalDialog
         open={showApprovalDialog}
         onOpenChange={handleApprovalDialogChange}
@@ -314,7 +384,7 @@ export default function Home() {
         onReject={reject}
       />
 
-      {/* Discussion Wizard — opens from sidebar Discussions click */}
+      {/* Discussion Wizard */}
       <DiscussionWizard
         open={discussionWizardOpen}
         onOpenChange={setDiscussionWizardOpen}
@@ -322,7 +392,7 @@ export default function Home() {
         onCreate={handleDiscussionCreate}
       />
 
-      {/* Discussion Panel — opens after a discussion is created or selected */}
+      {/* Discussion Panel */}
       <DiscussionPanel
         open={discussionPanelOpen}
         onOpenChange={setDiscussionPanelOpen}

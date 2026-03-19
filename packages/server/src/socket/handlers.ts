@@ -10,6 +10,10 @@ import { ApprovalManager } from '../engine/approval-manager'
 import { ModeratorEngine } from '../discussion/moderator'
 import type { AgentRecord } from '../discussion/moderator'
 import type { ParticipantRole, DiscussionFormat } from '@orchestra/shared'
+import { LoopEngine } from '../engine/loop-engine'
+import { ChainExecutor } from '../engine/chain-executor'
+import type { ChainDefinition as ChainDefinitionPayload } from '@orchestra/shared'
+import type { ChainDefinition } from '../engine/chain-executor'
 
 // Tracks the active sessionId per agentId so we can emit back on the right channel
 const agentSessionMap = new Map<string, string>()
@@ -22,6 +26,12 @@ const agentApprovalMap = new Map<string, string>()
 
 // Tracks active ModeratorEngine instances by tableId
 const activeDiscussions = new Map<string, ModeratorEngine>()
+
+// Tracks active LoopEngine instances by agentId
+const socketActiveLoops = new Map<string, LoopEngine>()
+
+// Tracks active ChainExecutor instances by chainId
+const socketActiveChains = new Map<string, ChainExecutor>()
 
 export function registerSocketHandlers(
   io: Server<ClientToServerEvents, ServerToClientEvents>,
@@ -230,6 +240,26 @@ export function registerSocketHandlers(
 
     socket.on('discussion:resume', (data) => {
       void handleDiscussionResume(socket, io, data)
+    })
+
+    socket.on('loop:start', (data: { agentId: string; message: string }) => {
+      void handleLoopStart(socket, io, data)
+    })
+
+    socket.on('loop:stop', (data: { agentId: string }) => {
+      handleLoopStop(socket, io, data)
+    })
+
+    socket.on('loop:approve', (data: { agentId: string; loopId: string; approved: boolean }) => {
+      handleLoopApprove(socket, data)
+    })
+
+    socket.on('chain:execute', (data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string }) => {
+      void handleChainExecute(socket, io, data)
+    })
+
+    socket.on('chain:stop', (data: { chainId: string }) => {
+      handleChainStop(socket, io, data)
     })
   })
 }
@@ -618,6 +648,260 @@ async function handleDiscussionResume(
       type: 'PROCESS_ERROR',
     })
   }
+}
+
+// ------------------------------------------------------------------
+// Loop handler implementations
+// ------------------------------------------------------------------
+
+async function handleLoopStart(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents>,
+  io: Server<ClientToServerEvents, ServerToClientEvents>,
+  data: { agentId: string; message: string },
+): Promise<void> {
+  const { agentId, message } = data
+
+  if (socketActiveLoops.has(agentId)) {
+    socket.emit('agent:error', {
+      agentId,
+      sessionId: '',
+      error: `Agent ${agentId} already has a running loop`,
+      type: 'RESOURCE_ERROR',
+    })
+    return
+  }
+
+  try {
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } })
+    if (!agent) {
+      socket.emit('agent:error', {
+        agentId,
+        sessionId: '',
+        error: `Agent ${agentId} not found`,
+        type: 'PROCESS_ERROR',
+      })
+      return
+    }
+
+    const engine = new LoopEngine(agentId)
+    socketActiveLoops.set(agentId, engine)
+
+    engine.on('iteration', (iterData) => {
+      io.emit('agent:loop_iteration', {
+        agentId,
+        iteration: iterData.iteration,
+        maxIterations: iterData.maxIterations,
+      })
+    })
+
+    engine.on('progress', (progressData) => {
+      io.emit('notification', {
+        id: `loop-progress-${agentId}-${progressData.iteration}`,
+        level: 'info',
+        title: `Loop iteration ${progressData.iteration}: ${progressData.learning.slice(0, 80)}`,
+        agentId,
+      })
+    })
+
+    engine.on('manual_approval_required', (approvalData) => {
+      io.emit('notification', {
+        id: `loop-approval-${agentId}-${approvalData.loopId}`,
+        level: 'action_required',
+        title: `Loop iteration ${approvalData.iteration} requires manual approval`,
+        agentId,
+        actions: ['approve', 'reject'],
+      })
+    })
+
+    engine.on('completed', (completedData) => {
+      socketActiveLoops.delete(agentId)
+      io.emit('notification', {
+        id: `loop-completed-${agentId}`,
+        level: 'info',
+        title: `Loop completed after ${completedData.totalIterations} iterations`,
+        agentId,
+      })
+      io.emit('agent:status', { agentId, status: 'idle' })
+    })
+
+    engine.on('failed', (failedData) => {
+      socketActiveLoops.delete(agentId)
+      io.emit('agent:error', {
+        agentId,
+        sessionId: '',
+        error: `Loop failed at iteration ${failedData.iteration}: ${failedData.error}`,
+        type: 'PROCESS_ERROR',
+      })
+      io.emit('agent:status', { agentId, status: 'error' })
+    })
+
+    io.emit('agent:status', { agentId, status: 'running' })
+
+    engine.start(message).catch((err: unknown) => {
+      socketActiveLoops.delete(agentId)
+      io.emit('agent:error', {
+        agentId,
+        sessionId: '',
+        error: err instanceof Error ? err.message : 'Loop failed to start',
+        type: 'PROCESS_ERROR',
+      })
+    })
+  } catch (err) {
+    socket.emit('agent:error', {
+      agentId,
+      sessionId: '',
+      error: err instanceof Error ? err.message : 'Failed to start loop',
+      type: 'PROCESS_ERROR',
+    })
+  }
+}
+
+function handleLoopStop(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents>,
+  io: Server<ClientToServerEvents, ServerToClientEvents>,
+  data: { agentId: string },
+): void {
+  const { agentId } = data
+  const engine = socketActiveLoops.get(agentId)
+
+  if (!engine) {
+    socket.emit('agent:error', {
+      agentId,
+      sessionId: '',
+      error: `No active loop for agent ${agentId}`,
+      type: 'PROCESS_ERROR',
+    })
+    return
+  }
+
+  engine.stop()
+  socketActiveLoops.delete(agentId)
+  io.emit('agent:status', { agentId, status: 'idle' })
+}
+
+function handleLoopApprove(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents>,
+  data: { agentId: string; loopId: string; approved: boolean },
+): void {
+  const { agentId, loopId, approved } = data
+  const engine = socketActiveLoops.get(agentId)
+
+  if (!engine) {
+    socket.emit('agent:error', {
+      agentId,
+      sessionId: '',
+      error: `No active loop for agent ${agentId}`,
+      type: 'PROCESS_ERROR',
+    })
+    return
+  }
+
+  engine.resolveManualApproval(loopId, approved)
+}
+
+// ------------------------------------------------------------------
+// Chain handler implementations
+// ------------------------------------------------------------------
+
+async function handleChainExecute(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents>,
+  io: Server<ClientToServerEvents, ServerToClientEvents>,
+  data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string },
+): Promise<void> {
+  const chainId = data.chainId ?? `chain-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+  if (socketActiveChains.has(chainId)) {
+    socket.emit('agent:error', {
+      agentId: chainId,
+      sessionId: '',
+      error: `Chain ${chainId} is already running`,
+      type: 'RESOURCE_ERROR',
+    })
+    return
+  }
+
+  try {
+    const executor = new ChainExecutor()
+    socketActiveChains.set(chainId, executor)
+
+    executor.on('step_start', (stepData) => {
+      io.emit('notification', {
+        id: `chain-step-${chainId}-${stepData.stepIndex}`,
+        level: 'info',
+        title: `Chain step ${stepData.stepIndex} started (agent ${stepData.agentId})`,
+      })
+    })
+
+    executor.on('step_complete', (stepData) => {
+      io.emit('notification', {
+        id: `chain-step-done-${chainId}-${stepData.stepIndex}`,
+        level: 'info',
+        title: `Chain step ${stepData.stepIndex} completed`,
+      })
+    })
+
+    executor.on('chain_complete', (completeData) => {
+      socketActiveChains.delete(chainId)
+      io.emit('notification', {
+        id: `chain-complete-${chainId}`,
+        level: 'info',
+        title: `Chain ${chainId} completed (${completeData.outputs.size} steps)`,
+      })
+    })
+
+    executor.on('error', (errData) => {
+      io.emit('notification', {
+        id: `chain-error-${chainId}-${errData.stepIndex}`,
+        level: 'error',
+        title: `Chain step ${errData.stepIndex} failed: ${errData.error.slice(0, 80)}`,
+      })
+    })
+
+    executor.execute(data.definition as ChainDefinition, data.initialMessage).catch((err: unknown) => {
+      socketActiveChains.delete(chainId)
+      io.emit('agent:error', {
+        agentId: chainId,
+        sessionId: '',
+        error: err instanceof Error ? err.message : 'Chain execution failed',
+        type: 'PROCESS_ERROR',
+      })
+    })
+  } catch (err) {
+    socketActiveChains.delete(chainId)
+    socket.emit('agent:error', {
+      agentId: chainId,
+      sessionId: '',
+      error: err instanceof Error ? err.message : 'Failed to start chain',
+      type: 'PROCESS_ERROR',
+    })
+  }
+}
+
+function handleChainStop(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents>,
+  io: Server<ClientToServerEvents, ServerToClientEvents>,
+  data: { chainId: string },
+): void {
+  const { chainId } = data
+  const executor = socketActiveChains.get(chainId)
+
+  if (!executor) {
+    socket.emit('agent:error', {
+      agentId: chainId,
+      sessionId: '',
+      error: `No active chain ${chainId}`,
+      type: 'PROCESS_ERROR',
+    })
+    return
+  }
+
+  executor.stop()
+  socketActiveChains.delete(chainId)
+  io.emit('notification', {
+    id: `chain-stopped-${chainId}`,
+    level: 'info',
+    title: `Chain ${chainId} stopped`,
+  })
 }
 
 // ------------------------------------------------------------------

@@ -51,7 +51,7 @@ export async function policyRoutes(app: FastifyInstance) {
   app.post('/api/policies', async (req, reply) => {
     try {
       const body = CreatePolicySchema.parse(req.body)
-      const policy = await prisma.policy.create({ data: body })
+      const policy = await prisma.policy.create({ data: { ...body, rules: body.rules as any } })
       sendSuccess(reply, policy, 201)
     } catch (error) {
       sendError(reply, error)
@@ -65,7 +65,7 @@ export async function policyRoutes(app: FastifyInstance) {
       if (!existing) throw new NotFoundError('Policy', req.params.id)
       const policy = await prisma.policy.update({
         where: { id: req.params.id },
-        data: body,
+        data: { ...body, rules: body.rules as any },
       })
       sendSuccess(reply, policy)
     } catch (error) {

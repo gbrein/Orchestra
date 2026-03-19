@@ -3,6 +3,8 @@ import { join } from 'path'
 import { prisma } from '../lib/prisma'
 import { recommendModel } from '@orchestra/shared'
 import type { AgentPurpose, ModelTier } from '@orchestra/shared'
+import { buildMcpConfig } from './mcp-config-builder'
+import type { MergedMcpConfig } from './mcp-config-builder'
 
 // Map ModelTier to the actual Claude model identifier used by the CLI
 const MODEL_IDS: Record<ModelTier, string> = {
@@ -33,6 +35,7 @@ export interface BuildResult {
   readonly permissionMode: string
   readonly maxBudgetUsd?: number
   readonly env: Record<string, string>
+  readonly mcpConfig?: MergedMcpConfig
 }
 
 export async function buildSpawnConfig(agentId: string): Promise<BuildResult> {
@@ -143,6 +146,23 @@ export async function buildSpawnConfig(agentId: string): Promise<BuildResult> {
     env['ANTHROPIC_API_KEY'] = anthropicKey
   }
 
+  // ------------------------------------------------------------------
+  // 7. MCP config — merge skill + external server configs
+  // ------------------------------------------------------------------
+  const mcpConfig = await buildMcpConfig(agentId)
+
+  if (mcpConfig.conflicts.length > 0) {
+    for (const conflict of mcpConfig.conflicts) {
+      console.warn(
+        `[prompt-builder] MCP conflict detected for agent ${agentId}: ` +
+          `server "${conflict.name}" defined by multiple sources: ${conflict.sources.join(', ')}`,
+      )
+    }
+  }
+
+  // If no MCP servers were found, omit the field entirely to keep SpawnOptions clean
+  const hasMcpServers = Object.keys(mcpConfig.mcpServers).length > 0
+
   return {
     systemPrompt,
     appendSystemPrompt,
@@ -151,6 +171,7 @@ export async function buildSpawnConfig(agentId: string): Promise<BuildResult> {
     permissionMode,
     maxBudgetUsd,
     env,
+    ...(hasMcpServers ? { mcpConfig } : {}),
   }
 }
 

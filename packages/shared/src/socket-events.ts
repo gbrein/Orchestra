@@ -1,4 +1,22 @@
-import type { MessageRole, TokenUsage } from './session'
+import type { TokenUsage } from './session'
+
+// Minimal chain definition used for socket-level communication
+export interface ChainStepPayload {
+  readonly agentId: string
+  readonly config?: Record<string, unknown>
+  readonly conditions?: ReadonlyArray<{ pattern: string; targetStepIndex: number }>
+}
+
+export interface ChainEdgePayload {
+  readonly from: number
+  readonly to: number
+  readonly condition?: string
+}
+
+export interface ChainDefinition {
+  readonly steps: readonly ChainStepPayload[]
+  readonly edges: readonly ChainEdgePayload[]
+}
 
 // Client -> Server events
 export interface ClientToServerEvents {
@@ -10,6 +28,11 @@ export interface ClientToServerEvents {
   'discussion:pause': (data: { tableId: string }) => void
   'discussion:resume': (data: { tableId: string }) => void
   'canvas:save': (data: { workspaceId: string; nodes: unknown[]; edges: unknown[]; viewport: unknown }) => void
+  'loop:start': (data: { agentId: string; message: string }) => void
+  'loop:stop': (data: { agentId: string }) => void
+  'loop:approve': (data: { agentId: string; loopId: string; approved: boolean }) => void
+  'chain:execute': (data: { chainId?: string; definition: ChainDefinition; initialMessage: string }) => void
+  'chain:stop': (data: { chainId: string }) => void
 }
 
 // Server -> Client events

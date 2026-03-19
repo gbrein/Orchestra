@@ -71,7 +71,7 @@ export async function skillRoutes(app: FastifyInstance) {
   app.post('/api/skills', async (req, reply) => {
     try {
       const body = CreateSkillSchema.parse(req.body)
-      const skill = await prisma.skill.create({ data: body })
+      const skill = await prisma.skill.create({ data: { ...body, mcpConfig: body.mcpConfig as any } })
       sendSuccess(reply, skill, 201)
     } catch (error) {
       sendError(reply, error)

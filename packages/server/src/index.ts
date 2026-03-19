@@ -10,6 +10,8 @@ import { sessionRoutes } from './routes/sessions'
 import { discussionRoutes } from './routes/discussions'
 import { canvasRoutes } from './routes/canvas'
 import { approvalRoutes } from './routes/approvals'
+import { mcpServerRoutes } from './routes/mcp-servers'
+import { loopRoutes, activeLoops, activeChains, activePipelines } from './routes/loops'
 import { ProcessManager } from './engine/process-manager'
 import { ApprovalManager } from './engine/approval-manager'
 import { registerSocketHandlers } from './socket/handlers'
@@ -54,6 +56,8 @@ async function main() {
   await app.register(discussionRoutes)
   await app.register(canvasRoutes)
   await app.register(approvalRoutes(approvalManager))
+  await app.register(mcpServerRoutes)
+  await app.register(loopRoutes)
 
   // Health check
   app.get('/api/health', async () => ({
@@ -110,6 +114,23 @@ async function main() {
     app.log.info('Shutting down gracefully...')
     clearInterval(approvalWatchdog)
     processManager.stopAll()
+
+    // Stop all active loops, chains, and pipelines
+    for (const [, engine] of activeLoops) {
+      engine.stop()
+    }
+    activeLoops.clear()
+
+    for (const [, executor] of activeChains) {
+      executor.stop()
+    }
+    activeChains.clear()
+
+    for (const [, pipeline] of activePipelines) {
+      pipeline.stop()
+    }
+    activePipelines.clear()
+
     io.close()
     await app.close()
     process.exit(0)
