@@ -11,22 +11,49 @@ import {
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type NodeType = 'agent' | 'skill' | 'safety' | 'discussion' | 'connection'
+
 interface SidebarItem {
   readonly icon: React.ElementType
   readonly label: string
   readonly shortcut?: string
+  readonly nodeType: NodeType
 }
 
+export interface SidebarProps {
+  readonly onCreateAgent?: () => void
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
 const ITEMS: readonly SidebarItem[] = [
-  { icon: Bot, label: 'Assistants', shortcut: 'N' },
-  { icon: Puzzle, label: 'Skills', shortcut: 'S' },
-  { icon: Shield, label: 'Safety Rules' },
-  { icon: MessageSquare, label: 'Discussions' },
-  { icon: Plug, label: 'Connections' },
+  { icon: Bot, label: 'Assistants', shortcut: 'N', nodeType: 'agent' },
+  { icon: Puzzle, label: 'Skills', shortcut: 'S', nodeType: 'skill' },
+  { icon: Shield, label: 'Safety Rules', nodeType: 'safety' },
+  { icon: MessageSquare, label: 'Discussions', nodeType: 'discussion' },
+  { icon: Plug, label: 'Connections', nodeType: 'connection' },
 ]
 
-export function Sidebar() {
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+export function Sidebar({ onCreateAgent }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
+
+  function handleDragStart(e: React.DragEvent<HTMLButtonElement>, nodeType: NodeType) {
+    e.dataTransfer.setData(
+      'application/orchestra-node',
+      JSON.stringify({ type: nodeType }),
+    )
+    e.dataTransfer.effectAllowed = 'move'
+  }
 
   return (
     <aside
@@ -60,6 +87,7 @@ export function Sidebar() {
                 size="sm"
                 className={cn('justify-start gap-2', collapsed && 'justify-center px-0')}
                 draggable
+                onDragStart={(e) => handleDragStart(e, item.nodeType)}
                 aria-label={item.label}
               >
                 <item.icon className="h-4 w-4 shrink-0" />
@@ -76,7 +104,9 @@ export function Sidebar() {
             {collapsed && (
               <TooltipContent side="right" className="text-xs">
                 {item.label}
-                {item.shortcut && <kbd className="ml-2 text-muted-foreground">{item.shortcut}</kbd>}
+                {item.shortcut && (
+                  <kbd className="ml-2 text-muted-foreground">{item.shortcut}</kbd>
+                )}
               </TooltipContent>
             )}
           </Tooltip>
@@ -94,6 +124,7 @@ export function Sidebar() {
               size="sm"
               className={cn('w-full gap-2', collapsed && 'px-0')}
               aria-label="Create new assistant"
+              onClick={onCreateAgent}
             >
               <Plus className="h-4 w-4" />
               {!collapsed && <span className="text-xs">New Assistant</span>}

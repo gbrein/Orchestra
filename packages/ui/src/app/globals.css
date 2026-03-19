@@ -78,3 +78,27 @@
     }
   }
 }
+
+/* React Flow — animated edge dash keyframe */
+@keyframes dashdraw {
+  from {
+    stroke-dashoffset: 9;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* React Flow dark-mode overrides */
+.react-flow__renderer {
+  background: transparent;
+}
+
+.react-flow__controls {
+  bottom: 5rem !important;
+  right: 1rem !important;
+}
+
+.react-flow__attribution {
+  display: none;
+}
