@@ -25,6 +25,8 @@ import { SettingsPanel } from '@/components/panels/settings-panel'
 import { McpManagement, type McpServer } from '@/components/panels/mcp-management'
 import { ChainConfig, type ChainStep, type ConditionalEdge } from '@/components/panels/chain-config'
 import { PrdEditor, type PrdData } from '@/components/panels/prd-editor'
+import { AssistantsList, type AssistantSummary } from '@/components/panels/assistants-list'
+import { GlobalSafetyPanel } from '@/components/panels/global-safety-panel'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { useSocket } from '@/hooks/use-socket'
@@ -57,6 +59,8 @@ export default function Home() {
   const [discussionPanelOpen, setDiscussionPanelOpen] = useState(false)
 
   // New panel states
+  const [assistantsListOpen, setAssistantsListOpen] = useState(false)
+  const [safetyPanelOpen, setSafetyPanelOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [discussionsListOpen, setDiscussionsListOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -216,6 +220,29 @@ export default function Home() {
     setActiveTab('workspace')
   }, [])
 
+  const handleAssistantsClick = useCallback(() => {
+    setAssistantsListOpen(true)
+  }, [])
+
+  const handleSafetyClick = useCallback(() => {
+    setSafetyPanelOpen(true)
+  }, [])
+
+  const handleSelectAssistant = useCallback((assistant: AssistantSummary) => {
+    setAssistantsListOpen(false)
+    setSelectedAgent({
+      id: assistant.id,
+      name: assistant.name,
+      status: assistant.status,
+      model: assistant.model,
+    })
+    setChatOpen(true)
+  }, [])
+
+  const handleDeleteAssistant = useCallback((id: string) => {
+    setNodes((prev) => prev.filter((n) => n.id !== id))
+  }, [])
+
   const handleConnectionsClick = useCallback(() => {
     setMcpManagementOpen(true)
   }, [])
@@ -270,6 +297,8 @@ export default function Home() {
     setSettingsOpen(false)
     setDiscussionsListOpen(false)
     setHistoryOpen(false)
+    setAssistantsListOpen(false)
+    setSafetyPanelOpen(false)
     setNodes((prev) =>
       prev.map((n) => ({ ...n, selected: false })),
     )
@@ -408,7 +437,9 @@ export default function Home() {
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           onCreateAgent={handleCreateAgent}
+          onAssistantsClick={handleAssistantsClick}
           onSkillsClick={handleToggleMarketplace}
+          onSafetyClick={handleSafetyClick}
           onDiscussionsClick={handleSidebarDiscussionsClick}
           onConnectionsClick={handleConnectionsClick}
         />
@@ -450,6 +481,31 @@ export default function Home() {
         open={shortcutsOpen}
         onOpenChange={setShortcutsOpen}
       />
+
+      {/* Assistants List */}
+      <ErrorBoundary>
+        <AssistantsList
+          open={assistantsListOpen}
+          onOpenChange={setAssistantsListOpen}
+          assistants={nodes
+            .filter((n) => n.type === 'agent')
+            .map((n) => {
+              const d = n.data as AgentNodeData
+              return { id: n.id, name: d.name, description: d.description, status: d.status, model: d.model, purpose: d.purpose }
+            })}
+          onSelect={handleSelectAssistant}
+          onCreateNew={handleCreateAgent}
+          onDelete={handleDeleteAssistant}
+        />
+      </ErrorBoundary>
+
+      {/* Global Safety Panel */}
+      <ErrorBoundary>
+        <GlobalSafetyPanel
+          open={safetyPanelOpen}
+          onOpenChange={setSafetyPanelOpen}
+        />
+      </ErrorBoundary>
 
       {/* Settings Panel */}
       <ErrorBoundary>

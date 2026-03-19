@@ -26,7 +26,9 @@ interface SidebarItem {
 
 export interface SidebarProps {
   readonly onCreateAgent?: () => void
+  readonly onAssistantsClick?: () => void
   readonly onSkillsClick?: () => void
+  readonly onSafetyClick?: () => void
   readonly onDiscussionsClick?: () => void
   readonly onConnectionsClick?: () => void
 }
@@ -47,7 +49,7 @@ const ITEMS: readonly SidebarItem[] = [
 // Component
 // ---------------------------------------------------------------------------
 
-export function Sidebar({ onCreateAgent, onSkillsClick, onDiscussionsClick, onConnectionsClick }: SidebarProps) {
+export function Sidebar({ onCreateAgent, onAssistantsClick, onSkillsClick, onSafetyClick, onDiscussionsClick, onConnectionsClick }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
 
   function handleDragStart(e: React.DragEvent<HTMLButtonElement>, nodeType: NodeType) {
@@ -92,8 +94,12 @@ export function Sidebar({ onCreateAgent, onSkillsClick, onDiscussionsClick, onCo
                 draggable
                 onDragStart={(e) => handleDragStart(e, item.nodeType)}
                 onClick={
-                  item.nodeType === 'skill'
+                  item.nodeType === 'agent'
+                    ? onAssistantsClick
+                    : item.nodeType === 'skill'
                     ? onSkillsClick
+                    : item.nodeType === 'safety'
+                    ? onSafetyClick
                     : item.nodeType === 'discussion'
                     ? onDiscussionsClick
                     : item.nodeType === 'connection'
