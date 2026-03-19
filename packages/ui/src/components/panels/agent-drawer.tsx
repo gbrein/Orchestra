@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useComplexity } from '@/hooks/use-complexity'
 import {
   Bot,
   Plus,
@@ -826,6 +827,10 @@ const TAB_LABELS: Record<DrawerTab, string> = {
   advanced: 'Advanced',
 }
 
+/**
+ * Complexity-aware: in Simple mode, only Settings + Skills tabs are shown.
+ * In Standard mode, Safety is added. In Full Control, MCP + Advanced are also shown.
+ */
 export function AgentDrawer({
   agent,
   open,

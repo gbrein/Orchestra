@@ -12,6 +12,10 @@ export interface BottomBarProps {
   readonly socketError?: string | null
   readonly runningAgentCount?: number
   readonly sessionCostUsd?: number
+  readonly zoomLevel?: number
+  readonly onZoomIn?: () => void
+  readonly onZoomOut?: () => void
+  readonly onFitView?: () => void
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -22,6 +26,10 @@ export function BottomBar({
   socketError = null,
   runningAgentCount = 0,
   sessionCostUsd = 0,
+  zoomLevel = 100,
+  onZoomIn,
+  onZoomOut,
+  onFitView,
 }: BottomBarProps) {
   const connectionLabel = connecting
     ? 'Connecting…'
@@ -92,17 +100,19 @@ export function BottomBar({
           size="sm"
           className="h-6 w-6 p-0"
           aria-label="Zoom out"
+          onClick={onZoomOut}
         >
           <ZoomOut className="h-3 w-3" aria-hidden />
         </Button>
-        <span className="w-10 text-center" aria-label="Zoom level 100 percent">
-          100%
+        <span className="w-10 text-center" aria-label={`Zoom level ${zoomLevel} percent`}>
+          {zoomLevel}%
         </span>
         <Button
           variant="ghost"
           size="sm"
           className="h-6 w-6 p-0"
           aria-label="Zoom in"
+          onClick={onZoomIn}
         >
           <ZoomIn className="h-3 w-3" aria-hidden />
         </Button>
@@ -111,6 +121,7 @@ export function BottomBar({
           size="sm"
           className="h-6 w-6 p-0"
           aria-label="Fit canvas to view"
+          onClick={onFitView}
         >
           <Maximize className="h-3 w-3" aria-hidden />
         </Button>

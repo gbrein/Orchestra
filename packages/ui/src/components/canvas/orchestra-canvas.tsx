@@ -71,6 +71,7 @@ interface OrchestraCanvasInnerProps {
   initialEdges: Edge[]
   onNodesChange?: (nodes: Node[]) => void
   onUndoRedoReady?: (controls: UndoRedoControls) => void
+  onViewReady?: (controls: CanvasViewControls) => void
   onNodeDoubleClick?: (nodeId: string, nodeType: string) => void
 }
 
@@ -81,17 +82,41 @@ export interface UndoRedoControls {
   canRedo: boolean
 }
 
+export interface CanvasViewControls {
+  zoomIn: () => void
+  zoomOut: () => void
+  fitView: () => void
+  getZoom: () => number
+}
+
 function OrchestraCanvasInner({
   initialNodes,
   initialEdges,
   onNodesChange,
   onUndoRedoReady,
+  onViewReady,
   onNodeDoubleClick,
 }: OrchestraCanvasInnerProps) {
   const [nodes, setNodes, handleNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, handleEdgesChange] = useEdgesState(initialEdges)
   const rfInstance = useRef<ReactFlowInstance | null>(null)
-  const { setNodes: rfSetNodes, setEdges: rfSetEdges } = useReactFlow()
+  const reactFlowInstance = useReactFlow()
+  const { setNodes: rfSetNodes, setEdges: rfSetEdges } = reactFlowInstance
+
+  // ── View controls (zoom, fit) ──────────────────────────────────────────
+  const viewControlsRef = useRef(false)
+  if (!viewControlsRef.current && onViewReady) {
+    viewControlsRef.current = true
+    // Defer to avoid calling during render
+    setTimeout(() => {
+      onViewReady({
+        zoomIn: () => reactFlowInstance.zoomIn(),
+        zoomOut: () => reactFlowInstance.zoomOut(),
+        fitView: () => reactFlowInstance.fitView({ padding: 0.2 }),
+        getZoom: () => reactFlowInstance.getZoom(),
+      })
+    }, 0)
+  }
 
   // ── Undo / Redo ────────────────────────────────────────────────────────
 
@@ -310,6 +335,7 @@ export interface OrchestraCanvasProps {
   initialEdges?: Edge[]
   onNodesChange?: (nodes: Node[]) => void
   onUndoRedoReady?: (controls: UndoRedoControls) => void
+  onViewReady?: (controls: CanvasViewControls) => void
   onNodeDoubleClick?: (nodeId: string, nodeType: string) => void
 }
 
@@ -318,6 +344,7 @@ export function OrchestraCanvas({
   initialEdges = [],
   onNodesChange,
   onUndoRedoReady,
+  onViewReady,
   onNodeDoubleClick,
 }: OrchestraCanvasProps) {
   return (
@@ -327,6 +354,7 @@ export function OrchestraCanvas({
         initialEdges={initialEdges}
         onNodesChange={onNodesChange}
         onUndoRedoReady={onUndoRedoReady}
+        onViewReady={onViewReady}
         onNodeDoubleClick={onNodeDoubleClick}
       />
     </ReactFlowProvider>

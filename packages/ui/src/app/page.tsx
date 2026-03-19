@@ -29,6 +29,7 @@ import { AssistantsList, type AssistantSummary } from '@/components/panels/assis
 import { GlobalSafetyPanel } from '@/components/panels/global-safety-panel'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
+import { ComplexityContext, getComplexityFromStorage, type ComplexityContextValue } from '@/hooks/use-complexity'
 import { useSocket } from '@/hooks/use-socket'
 import { useNotifications } from '@/hooks/use-notifications'
 import { useApprovals } from '@/hooks/use-approvals'
@@ -83,6 +84,15 @@ export default function Home() {
   const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
 
+  const [zoomLevel, setZoomLevel] = useState(100)
+  const [complexity, setComplexity] = useState<ComplexityContextValue>(() => getComplexityFromStorage())
+
+  // Re-read complexity when settings panel closes
+  const handleSettingsClose = useCallback((open: boolean) => {
+    setSettingsOpen(open)
+    if (!open) setComplexity(getComplexityFromStorage())
+  }, [])
+
   const { connected, connecting, error: socketError } = useSocket()
 
   const {
@@ -102,9 +112,34 @@ export default function Home() {
   } = useApprovals()
 
   const undoRedoRef = useRef<UndoRedoControls | null>(null)
+  const viewRef = useRef<import('@/components/canvas/orchestra-canvas').CanvasViewControls | null>(null)
 
   const handleUndoRedoReady = useCallback((controls: UndoRedoControls) => {
     undoRedoRef.current = controls
+  }, [])
+
+  const handleViewReady = useCallback((controls: import('@/components/canvas/orchestra-canvas').CanvasViewControls) => {
+    viewRef.current = controls
+  }, [])
+
+  const handleZoomIn = useCallback(() => {
+    viewRef.current?.zoomIn()
+    const z = viewRef.current?.getZoom()
+    if (z) setZoomLevel(Math.round(z * 100))
+  }, [])
+
+  const handleZoomOut = useCallback(() => {
+    viewRef.current?.zoomOut()
+    const z = viewRef.current?.getZoom()
+    if (z) setZoomLevel(Math.round(z * 100))
+  }, [])
+
+  const handleFitView = useCallback(() => {
+    viewRef.current?.fitView()
+    setTimeout(() => {
+      const z = viewRef.current?.getZoom()
+      if (z) setZoomLevel(Math.round(z * 100))
+    }, 100)
   }, [])
 
   const showCanvas = nodes.length > 0
@@ -420,6 +455,7 @@ export default function Home() {
   }, [])
 
   return (
+    <ComplexityContext.Provider value={complexity}>
     <div className="flex h-screen flex-col overflow-hidden">
       <TopBar
         notifications={notifications}
@@ -453,6 +489,7 @@ export default function Home() {
                 initialNodes={nodes}
                 onNodesChange={handleNodesChange}
                 onUndoRedoReady={handleUndoRedoReady}
+                onViewReady={handleViewReady}
                 onNodeDoubleClick={handleNodeDoubleClick}
               />
             </div>
@@ -475,6 +512,10 @@ export default function Home() {
         connecting={connecting}
         socketError={socketError}
         runningAgentCount={runningAgentCount}
+        zoomLevel={zoomLevel}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onFitView={handleFitView}
       />
 
       <ShortcutOverlay
@@ -511,7 +552,7 @@ export default function Home() {
       <ErrorBoundary>
         <SettingsPanel
           open={settingsOpen}
-          onOpenChange={setSettingsOpen}
+          onOpenChange={handleSettingsClose}
         />
       </ErrorBoundary>
 
@@ -659,5 +700,6 @@ export default function Home() {
         />
       </ErrorBoundary>
     </div>
+    </ComplexityContext.Provider>
   )
 }
