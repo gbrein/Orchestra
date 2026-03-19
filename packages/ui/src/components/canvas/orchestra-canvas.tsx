@@ -18,6 +18,7 @@ import {
   type OnConnect,
   ReactFlowProvider,
   type ReactFlowInstance,
+  useReactFlow,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 
@@ -32,6 +33,7 @@ import {
   type SkillNodeData,
   type PolicyNodeData,
 } from '@/lib/canvas-utils'
+import { useUndoRedo } from '@/hooks/use-undo-redo'
 
 // ─── Node and edge type registries ────────────────────────────────────────
 
@@ -62,16 +64,52 @@ interface OrchestraCanvasInnerProps {
   initialNodes: Node[]
   initialEdges: Edge[]
   onNodesChange?: (nodes: Node[]) => void
+  onUndoRedoReady?: (controls: UndoRedoControls) => void
+}
+
+export interface UndoRedoControls {
+  undo: () => void
+  redo: () => void
+  canUndo: boolean
+  canRedo: boolean
 }
 
 function OrchestraCanvasInner({
   initialNodes,
   initialEdges,
   onNodesChange,
+  onUndoRedoReady,
 }: OrchestraCanvasInnerProps) {
   const [nodes, setNodes, handleNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, handleEdgesChange] = useEdgesState(initialEdges)
   const rfInstance = useRef<ReactFlowInstance | null>(null)
+  const { setNodes: rfSetNodes, setEdges: rfSetEdges } = useReactFlow()
+
+  // ── Undo / Redo ────────────────────────────────────────────────────────
+
+  const { undo, redo, canUndo, canRedo, takeSnapshot } = useUndoRedo({
+    nodes,
+    edges,
+    setNodes: (next) => {
+      rfSetNodes(next)
+      onNodesChange?.(next)
+    },
+    setEdges: rfSetEdges,
+  })
+
+  // Expose undo/redo controls to the parent via callback ref pattern
+  const controlsRef = useRef<UndoRedoControls | null>(null)
+  const nextControls: UndoRedoControls = { undo, redo, canUndo, canRedo }
+
+  if (
+    onUndoRedoReady &&
+    (controlsRef.current === null ||
+      controlsRef.current.canUndo !== canUndo ||
+      controlsRef.current.canRedo !== canRedo)
+  ) {
+    controlsRef.current = nextControls
+    onUndoRedoReady(nextControls)
+  }
 
   // ── Connection handler ────────────────────────────────────────────────
 
@@ -82,13 +120,14 @@ function OrchestraCanvasInner({
       const sourceNode = nodes.find((n) => n.id === connection.source)
       const targetNode = nodes.find((n) => n.id === connection.target)
 
-      // Enforce: skill/policy may only connect to agent targets
       if (
         (sourceNode?.type === 'skill' || sourceNode?.type === 'policy') &&
         targetNode?.type !== 'agent'
       ) {
         return
       }
+
+      takeSnapshot()
 
       const edgeType = resolveEdgeType(sourceNode)
 
@@ -104,7 +143,7 @@ function OrchestraCanvasInner({
 
       setEdges((prev) => addEdge(newEdge, prev))
     },
-    [nodes, setEdges],
+    [nodes, setEdges, takeSnapshot],
   )
 
   // ── Drag-and-drop handlers ────────────────────────────────────────────
@@ -168,14 +207,22 @@ function OrchestraCanvasInner({
         return
       }
 
+      takeSnapshot()
+
       setNodes((prev) => {
         const updated = [...prev, newNode]
         onNodesChange?.(updated)
         return updated
       })
     },
-    [setNodes, onNodesChange],
+    [setNodes, onNodesChange, takeSnapshot],
   )
+
+  // ── Node drag – snapshot before position changes ───────────────────────
+
+  const handleNodeDragStart = useCallback(() => {
+    takeSnapshot()
+  }, [takeSnapshot])
 
   return (
     <div className="h-full w-full" onDragOver={handleDragOver} onDrop={handleDrop}>
@@ -185,6 +232,7 @@ function OrchestraCanvasInner({
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
+        onNodeDragStart={handleNodeDragStart}
         onInit={(instance) => {
           rfInstance.current = instance
         }}
@@ -195,7 +243,7 @@ function OrchestraCanvasInner({
         fitViewOptions={{ padding: 0.2 }}
         minZoom={0.2}
         maxZoom={2}
-        deleteKeyCode={['Backspace', 'Delete']}
+        deleteKeyCode={null}
         className="bg-background"
       >
         <Background
@@ -232,12 +280,14 @@ export interface OrchestraCanvasProps {
   initialNodes?: Node[]
   initialEdges?: Edge[]
   onNodesChange?: (nodes: Node[]) => void
+  onUndoRedoReady?: (controls: UndoRedoControls) => void
 }
 
 export function OrchestraCanvas({
   initialNodes = [],
   initialEdges = [],
   onNodesChange,
+  onUndoRedoReady,
 }: OrchestraCanvasProps) {
   return (
     <ReactFlowProvider>
@@ -245,6 +295,7 @@ export function OrchestraCanvas({
         initialNodes={initialNodes}
         initialEdges={initialEdges}
         onNodesChange={onNodesChange}
+        onUndoRedoReady={onUndoRedoReady}
       />
     </ReactFlowProvider>
   )
