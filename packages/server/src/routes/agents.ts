@@ -12,7 +12,7 @@ const CreateAgentSchema = z.object({
   scope: z.array(z.string()).default([]),
   allowedTools: z.array(z.string()).default([]),
   memoryEnabled: z.boolean().default(false),
-  model: z.enum(['opus', 'sonnet', 'haiku']).optional(),
+  model: z.string().optional(),
 })
 
 const UpdateAgentSchema = CreateAgentSchema.partial()
