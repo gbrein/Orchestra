@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react'
 import type { Node, Edge } from '@xyflow/react'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { Sidebar } from '@/components/shell/sidebar'
 import { TopBar, type TopBarTab } from '@/components/shell/top-bar'
 import { BottomBar } from '@/components/shell/bottom-bar'
@@ -636,10 +636,12 @@ export default function Home() {
         <SheetContent
           side="right"
           className="flex w-[420px] flex-col gap-0 p-0 sm:w-[500px]"
-          aria-label={selectedAgent ? `Chat with ${selectedAgent.name}` : 'Agent chat'}
         >
+          <SheetTitle className="sr-only">
+            {selectedAgent ? `Chat with ${selectedAgent.name}` : 'Agent chat'}
+          </SheetTitle>
           <ErrorBoundary>
-            {selectedAgent && (
+            {selectedAgent ? (
               <AgentChat
                 agentId={selectedAgent.id}
                 agentName={selectedAgent.name}
@@ -647,6 +649,10 @@ export default function Home() {
                 agentModel={selectedAgent.model}
                 onClose={handleChatClose}
               />
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                Select an assistant to start chatting
+              </div>
             )}
           </ErrorBoundary>
         </SheetContent>
