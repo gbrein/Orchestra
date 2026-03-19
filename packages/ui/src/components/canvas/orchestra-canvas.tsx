@@ -65,6 +65,7 @@ interface OrchestraCanvasInnerProps {
   initialEdges: Edge[]
   onNodesChange?: (nodes: Node[]) => void
   onUndoRedoReady?: (controls: UndoRedoControls) => void
+  onNodeDoubleClick?: (nodeId: string, nodeType: string) => void
 }
 
 export interface UndoRedoControls {
@@ -79,6 +80,7 @@ function OrchestraCanvasInner({
   initialEdges,
   onNodesChange,
   onUndoRedoReady,
+  onNodeDoubleClick,
 }: OrchestraCanvasInnerProps) {
   const [nodes, setNodes, handleNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, handleEdgesChange] = useEdgesState(initialEdges)
@@ -224,6 +226,15 @@ function OrchestraCanvasInner({
     takeSnapshot()
   }, [takeSnapshot])
 
+  // ── Node double-click ─────────────────────────────────────────────────
+
+  const handleNodeDoubleClick = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      onNodeDoubleClick?.(node.id, node.type ?? '')
+    },
+    [onNodeDoubleClick],
+  )
+
   return (
     <div className="h-full w-full" onDragOver={handleDragOver} onDrop={handleDrop}>
       <ReactFlow
@@ -233,6 +244,7 @@ function OrchestraCanvasInner({
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
         onNodeDragStart={handleNodeDragStart}
+        onNodeDoubleClick={handleNodeDoubleClick}
         onInit={(instance) => {
           rfInstance.current = instance
         }}
@@ -281,6 +293,7 @@ export interface OrchestraCanvasProps {
   initialEdges?: Edge[]
   onNodesChange?: (nodes: Node[]) => void
   onUndoRedoReady?: (controls: UndoRedoControls) => void
+  onNodeDoubleClick?: (nodeId: string, nodeType: string) => void
 }
 
 export function OrchestraCanvas({
@@ -288,6 +301,7 @@ export function OrchestraCanvas({
   initialEdges = [],
   onNodesChange,
   onUndoRedoReady,
+  onNodeDoubleClick,
 }: OrchestraCanvasProps) {
   return (
     <ReactFlowProvider>
@@ -296,6 +310,7 @@ export function OrchestraCanvas({
         initialEdges={initialEdges}
         onNodesChange={onNodesChange}
         onUndoRedoReady={onUndoRedoReady}
+        onNodeDoubleClick={onNodeDoubleClick}
       />
     </ReactFlowProvider>
   )

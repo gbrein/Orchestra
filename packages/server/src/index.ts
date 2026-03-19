@@ -9,11 +9,15 @@ import { policyRoutes } from './routes/policies'
 import { sessionRoutes } from './routes/sessions'
 import { discussionRoutes } from './routes/discussions'
 import { canvasRoutes } from './routes/canvas'
+import { ProcessManager } from './engine/process-manager'
+import { registerSocketHandlers } from './socket/handlers'
 
 const PORT = parseInt(process.env.PORT ?? '3001', 10)
 const UI_ORIGIN = process.env.UI_ORIGIN ?? 'http://localhost:3000'
 
 async function main() {
+  const processManager = new ProcessManager()
+
   // [G2] Prerequisites validation
   const prereqs = await checkPrerequisites()
   if (!prereqs.allPassed) {
@@ -50,6 +54,10 @@ async function main() {
       status: 'ok',
       timestamp: new Date().toISOString(),
       prerequisites: prereqs,
+      engine: {
+        runningAgents: processManager.getRunningCount(),
+        queuedAgents: processManager.getQueuedCount(),
+      },
     },
   }))
 
@@ -66,9 +74,13 @@ async function main() {
     })
   })
 
+  // Register Claude Code engine socket handlers
+  registerSocketHandlers(io, processManager)
+
   // Graceful shutdown [G6]
   const shutdown = async () => {
     app.log.info('Shutting down gracefully...')
+    processManager.stopAll()
     io.close()
     await app.close()
     process.exit(0)
