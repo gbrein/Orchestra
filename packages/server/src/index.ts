@@ -53,7 +53,10 @@ async function main() {
     return httpServer
   }})
 
-  await app.register(cors, { origin: UI_ORIGIN })
+  await app.register(cors, {
+    origin: UI_ORIGIN,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  })
 
   // Routes
   await app.register(agentRoutes)

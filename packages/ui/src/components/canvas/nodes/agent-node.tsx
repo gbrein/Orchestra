@@ -19,7 +19,7 @@ const STATUS_ICON_MAP: Record<AgentStatus, React.ElementType> = {
 }
 
 function StatusIcon({ status }: { status: AgentStatus }) {
-  const Icon = STATUS_ICON_MAP[status]
+  const Icon = STATUS_ICON_MAP[status] ?? Circle
   return (
     <Icon
       className={cn('h-3 w-3', status === 'running' && 'animate-spin')}
