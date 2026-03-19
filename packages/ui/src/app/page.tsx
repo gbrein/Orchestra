@@ -43,6 +43,8 @@ import type { OrchestraNotification } from '@/hooks/use-notifications'
 interface SelectedAgent {
   readonly id: string
   readonly name: string
+  readonly description?: string
+  readonly purpose?: string
   readonly status: AgentStatus
   readonly model?: string
 }
@@ -462,6 +464,8 @@ export default function Home() {
       setSelectedAgent({
         id: nodeId,
         name: data.name,
+        description: data.description,
+        purpose: data.purpose,
         status: data.status,
         model: data.model,
       })
@@ -722,8 +726,14 @@ export default function Home() {
               <AgentChat
                 agentId={selectedAgent.id}
                 agentName={selectedAgent.name}
+                agentDescription={selectedAgent.description}
+                agentPurpose={selectedAgent.purpose}
                 agentStatus={selectedAgent.status}
                 agentModel={selectedAgent.model}
+                onEdit={() => {
+                  setChatOpen(false)
+                  // TODO: open AgentDrawer for this agent
+                }}
               />
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
