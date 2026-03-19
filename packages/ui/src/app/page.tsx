@@ -30,7 +30,7 @@ import { AssistantsList, type AssistantSummary } from '@/components/panels/assis
 import { GlobalSafetyPanel } from '@/components/panels/global-safety-panel'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
-import { ComplexityContext, getComplexityFromStorage, type ComplexityContextValue } from '@/hooks/use-complexity'
+import { ComplexityContext, useComplexityState } from '@/hooks/use-complexity'
 import { useSocket } from '@/hooks/use-socket'
 import { useNotifications } from '@/hooks/use-notifications'
 import { useApprovals } from '@/hooks/use-approvals'
@@ -88,13 +88,12 @@ export default function Home() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
 
   const [zoomLevel, setZoomLevel] = useState(100)
-  const [complexity, setComplexity] = useState<ComplexityContextValue>(() => getComplexityFromStorage())
+  const { value: complexity, refresh: refreshComplexity } = useComplexityState()
 
-  // Re-read complexity when settings panel closes
   const handleSettingsClose = useCallback((open: boolean) => {
     setSettingsOpen(open)
-    if (!open) setComplexity(getComplexityFromStorage())
-  }, [])
+    if (!open) refreshComplexity()
+  }, [refreshComplexity])
 
   const { connected, connecting, error: socketError } = useSocket()
 
