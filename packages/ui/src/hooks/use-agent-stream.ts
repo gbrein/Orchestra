@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { TokenUsage } from '@orchestra/shared'
-import { getSocket, isSocketCreated } from '@/lib/socket'
+import { getSocket } from '@/lib/socket'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -49,12 +49,14 @@ function classifyError(type: string, rawMessage: string): AgentChatError {
     overloaded: 'The service is temporarily overloaded. Please try again shortly.',
     auth: 'Authentication failed. Please check your API configuration.',
     context_length: 'The conversation is too long. Consider clearing the chat.',
+    PROCESS_ERROR: 'The assistant process failed to start. Make sure Claude Code is installed and configured.',
+    APPROVAL_TIMEOUT: 'The approval request timed out.',
   }
 
   return {
     type,
     message: rawMessage,
-    userMessage: USER_MESSAGES[type] ?? 'An unexpected error occurred. Please try again.',
+    userMessage: USER_MESSAGES[type] ?? (rawMessage || 'An unexpected error occurred. Please try again.'),
     retryable,
   }
 }
@@ -67,58 +69,34 @@ export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null)
   const [error, setError] = useState<AgentChatError | null>(null)
 
-  // Track the current streaming message id to avoid stale closures
   const streamingMessageIdRef = useRef<string | null>(null)
+  const listenersAttachedRef = useRef(false)
+  const agentIdRef = useRef(agentId)
 
+  // Keep agentId ref in sync
   useEffect(() => {
-    if (!agentId || !isSocketCreated()) return
+    agentIdRef.current = agentId
+    // Reset listeners when agent changes so they reattach for the new agent
+    listenersAttachedRef.current = false
+  }, [agentId])
 
-    function handleText(data: {
-      agentId: string
-      sessionId: string
-      content: string
-      partial: boolean
-    }) {
-      if (data.agentId !== agentId) return
+  // Attach socket listeners — called once when first message is sent
+  const ensureListeners = useCallback(() => {
+    if (listenersAttachedRef.current) return
+    listenersAttachedRef.current = true
+
+    const socket = getSocket()
+
+    socket.on('agent:text', (data) => {
+      if (data.agentId !== agentIdRef.current) return
 
       if (data.partial) {
-        // Streaming: append to or create the current assistant message
         setMessages((prev) => {
           const last = prev[prev.length - 1]
           if (last && last.role === 'assistant' && last.partial) {
-            // Update the existing partial message immutably
             return [
-              ...prev.slice(0, prev.length - 1),
+              ...prev.slice(0, -1),
               { ...last, content: last.content + data.content },
-            ]
-          }
-          // Start a new partial message
-          const newId = crypto.randomUUID()
-          streamingMessageIdRef.current = newId
-          return [
-            ...prev,
-            {
-              id: newId,
-              role: 'assistant',
-              content: data.content,
-              timestamp: new Date(),
-              partial: true,
-            },
-          ]
-        })
-        setIsStreaming(true)
-      } else {
-        // Final chunk: finalize the partial message or create a complete one
-        setMessages((prev) => {
-          const last = prev[prev.length - 1]
-          if (last && last.role === 'assistant' && last.partial) {
-            return [
-              ...prev.slice(0, prev.length - 1),
-              {
-                ...last,
-                content: last.content + (data.content ?? ''),
-                partial: false,
-              },
             ]
           }
           return [
@@ -128,118 +106,89 @@ export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
               role: 'assistant',
               content: data.content,
               timestamp: new Date(),
-              partial: false,
+              partial: true,
             },
           ]
         })
-        streamingMessageIdRef.current = null
+        setIsStreaming(true)
+      } else {
+        setMessages((prev) => {
+          const last = prev[prev.length - 1]
+          if (last && last.role === 'assistant' && last.partial) {
+            return [
+              ...prev.slice(0, -1),
+              { ...last, content: data.content || last.content, partial: false },
+            ]
+          }
+          if (data.content) {
+            return [
+              ...prev,
+              {
+                id: crypto.randomUUID(),
+                role: 'assistant',
+                content: data.content,
+                timestamp: new Date(),
+                partial: false,
+              },
+            ]
+          }
+          return prev
+        })
       }
-    }
+    })
 
-    function handleToolUse(data: {
-      agentId: string
-      sessionId: string
-      toolName: string
-      input: unknown
-    }) {
-      if (data.agentId !== agentId) return
-
-      const toolMessageId = crypto.randomUUID()
+    socket.on('agent:tool_use', (data) => {
+      if (data.agentId !== agentIdRef.current) return
       setMessages((prev) => [
         ...prev,
         {
-          id: toolMessageId,
+          id: crypto.randomUUID(),
           role: 'tool',
           content: '',
           toolUse: { toolName: data.toolName, input: data.input },
           timestamp: new Date(),
         },
       ])
-    }
+    })
 
-    function handleToolResult(data: {
-      agentId: string
-      sessionId: string
-      toolName: string
-      output: unknown
-    }) {
-      if (data.agentId !== agentId) return
-
-      // Update the most recent tool message matching this tool name
+    socket.on('agent:tool_result', (data) => {
+      if (data.agentId !== agentIdRef.current) return
       setMessages((prev) => {
-        const lastToolIdx = [...prev]
-          .reverse()
-          .findIndex((m) => m.role === 'tool' && m.toolUse?.toolName === data.toolName)
-
-        if (lastToolIdx === -1) return prev
-
-        const realIdx = prev.length - 1 - lastToolIdx
-        const updated: ChatMessage = {
-          ...prev[realIdx],
-          toolUse: {
-            ...prev[realIdx].toolUse!,
-            output: data.output,
-          },
-        }
-
+        const idx = [...prev].reverse().findIndex(
+          (m) => m.role === 'tool' && m.toolUse?.toolName === data.toolName,
+        )
+        if (idx === -1) return prev
+        const realIdx = prev.length - 1 - idx
         return [
           ...prev.slice(0, realIdx),
-          updated,
+          { ...prev[realIdx], toolUse: { ...prev[realIdx].toolUse!, output: data.output } },
           ...prev.slice(realIdx + 1),
         ]
       })
-    }
+    })
 
-    function handleError(data: {
-      agentId: string
-      sessionId: string
-      error: string
-      type: string
-    }) {
-      if (data.agentId !== agentId) return
-
+    socket.on('agent:error', (data) => {
+      if (data.agentId !== agentIdRef.current) return
       setIsStreaming(false)
       streamingMessageIdRef.current = null
       setError(classifyError(data.type, data.error))
-    }
+    })
 
-    function handleDone(data: {
-      agentId: string
-      sessionId: string
-      usage: TokenUsage
-    }) {
-      if (data.agentId !== agentId) return
-
+    socket.on('agent:done', (data) => {
+      if (data.agentId !== agentIdRef.current) return
       setIsStreaming(false)
       streamingMessageIdRef.current = null
       setTokenUsage(data.usage)
-
       // Finalize any dangling partial message
       setMessages((prev) => {
         const last = prev[prev.length - 1]
         if (last?.partial) {
-          return [...prev.slice(0, prev.length - 1), { ...last, partial: false }]
+          return [...prev.slice(0, -1), { ...last, partial: false }]
         }
         return prev
       })
-    }
-
-    const socket = getSocket()
-    socket.on('agent:text', handleText)
-    socket.on('agent:tool_use', handleToolUse)
-    socket.on('agent:tool_result', handleToolResult)
-    socket.on('agent:error', handleError)
-    socket.on('agent:done', handleDone)
-
-    return () => {
-      const s = getSocket()
-      s.off('agent:text', handleText)
-      s.off('agent:tool_use', handleToolUse)
-      s.off('agent:tool_result', handleToolResult)
-      s.off('agent:error', handleError)
-      s.off('agent:done', handleDone)
-    }
-  }, [agentId])
+    })
+  }, [])
 
   const sendMessage = useCallback(
     (message: string) => {
@@ -260,31 +209,28 @@ export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
 
       const sock = getSocket()
 
-      // If not connected, try to connect and wait briefly
+      // Ensure listeners are attached BEFORE sending
+      ensureListeners()
+
       if (!sock.connected) {
         sock.connect()
 
-        // Give 3 seconds to connect, then show error if failed
         const connectTimeout = setTimeout(() => {
           if (!sock.connected) {
             setIsStreaming(false)
             setError({
               type: 'network',
               message: 'Cannot reach the Orchestra server',
-              userMessage: 'Cannot reach the server at localhost:3001. Make sure the backend is running: npm run dev:server',
+              userMessage: 'Cannot reach the server. Make sure the backend is running: npm run dev:server',
               retryable: true,
             })
           }
-        }, 3000)
+        }, 5000)
 
         sock.once('connect', () => {
           clearTimeout(connectTimeout)
-          if (isStreaming) {
-            sock.emit('agent:message', { agentId, message: trimmed })
-          } else {
-            setIsStreaming(true)
-            sock.emit('agent:start', { agentId, message: trimmed })
-          }
+          setIsStreaming(true)
+          sock.emit('agent:start', { agentId, message: trimmed })
         })
         return
       }
@@ -296,7 +242,7 @@ export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
         sock.emit('agent:start', { agentId, message: trimmed })
       }
     },
-    [agentId, isStreaming],
+    [agentId, isStreaming, ensureListeners],
   )
 
   const stopAgent = useCallback(() => {
@@ -304,11 +250,10 @@ export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
     getSocket().emit('agent:stop', { agentId })
     setIsStreaming(false)
     streamingMessageIdRef.current = null
-    // Finalize any partial message
     setMessages((prev) => {
       const last = prev[prev.length - 1]
       if (last?.partial) {
-        return [...prev.slice(0, prev.length - 1), { ...last, partial: false }]
+        return [...prev.slice(0, -1), { ...last, partial: false }]
       }
       return prev
     })
