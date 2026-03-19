@@ -74,9 +74,12 @@ async function main() {
     },
   }))
 
-  // Socket.IO setup
+  // Start the HTTP server first so app.server exists
+  await app.listen({ port: PORT, host: '0.0.0.0' })
+
+  // Socket.IO setup — must be after listen() so app.server is available
   const io = new Server<ClientToServerEvents, ServerToClientEvents>(app.server, {
-    cors: { origin: UI_ORIGIN },
+    cors: { origin: UI_ORIGIN, methods: ['GET', 'POST'] },
   })
 
   io.on('connection', (socket) => {
@@ -115,20 +118,11 @@ async function main() {
     clearInterval(approvalWatchdog)
     processManager.stopAll()
 
-    // Stop all active loops, chains, and pipelines
-    for (const [, engine] of activeLoops) {
-      engine.stop()
-    }
+    for (const [, engine] of activeLoops) engine.stop()
     activeLoops.clear()
-
-    for (const [, executor] of activeChains) {
-      executor.stop()
-    }
+    for (const [, executor] of activeChains) executor.stop()
     activeChains.clear()
-
-    for (const [, pipeline] of activePipelines) {
-      pipeline.stop()
-    }
+    for (const [, pipeline] of activePipelines) pipeline.stop()
     activePipelines.clear()
 
     io.close()
@@ -138,8 +132,6 @@ async function main() {
 
   process.on('SIGINT', shutdown)
   process.on('SIGTERM', shutdown)
-
-  await app.listen({ port: PORT, host: '0.0.0.0' })
   console.log(`\nOrchestra server running on http://localhost:${PORT}`)
   console.log(`   Accepting connections from ${UI_ORIGIN}\n`)
 }
