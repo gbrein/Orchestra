@@ -26,6 +26,7 @@ interface SidebarItem {
 
 export interface SidebarProps {
   readonly onCreateAgent?: () => void
+  readonly onSkillsClick?: () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -44,7 +45,7 @@ const ITEMS: readonly SidebarItem[] = [
 // Component
 // ---------------------------------------------------------------------------
 
-export function Sidebar({ onCreateAgent }: SidebarProps) {
+export function Sidebar({ onCreateAgent, onSkillsClick }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
 
   function handleDragStart(e: React.DragEvent<HTMLButtonElement>, nodeType: NodeType) {
@@ -88,6 +89,7 @@ export function Sidebar({ onCreateAgent }: SidebarProps) {
                 className={cn('justify-start gap-2', collapsed && 'justify-center px-0')}
                 draggable
                 onDragStart={(e) => handleDragStart(e, item.nodeType)}
+                onClick={item.nodeType === 'skill' ? onSkillsClick : undefined}
                 aria-label={item.label}
               >
                 <item.icon className="h-4 w-4 shrink-0" />

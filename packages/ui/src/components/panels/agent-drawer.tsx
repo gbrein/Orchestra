@@ -5,7 +5,6 @@ import {
   Bot,
   Plus,
   Trash2,
-  GripVertical,
   ChevronDown,
   ChevronUp,
   FolderOpen,
@@ -28,6 +27,7 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import { ModelSelector } from './model-selector'
+import { AgentSkillsTab } from './agent-skills-tab'
 import {
   type Agent,
   type AgentPurpose,
@@ -45,17 +45,10 @@ export interface AgentDrawerProps {
   readonly open: boolean
   readonly onOpenChange: (open: boolean) => void
   readonly onSave: (updates: Partial<Agent>) => void
+  readonly onOpenMarketplace?: () => void
 }
 
 type SafetyLevel = 'cautious' | 'balanced' | 'autonomous'
-
-interface AgentSkillRow {
-  readonly id: string
-  readonly name: string
-  readonly description: string
-  readonly enabled: boolean
-  readonly priority: number
-}
 
 interface ConversationRow {
   readonly id: string
@@ -256,117 +249,54 @@ function SettingsTab({
   )
 }
 
-// Skills Tab
-function SkillsTab() {
-  const [skills, setSkills] = useState<AgentSkillRow[]>([
-    // Seed with empty list — in a real app this would come from props/API
-  ])
-  const [dragIndex, setDragIndex] = useState<number | null>(null)
+// Skills Tab — delegates to AgentSkillsTab component
+function SkillsTab({
+  agentId,
+  onOpenMarketplace,
+}: {
+  readonly agentId: string
+  readonly onOpenMarketplace: () => void
+}) {
+  const [skills, setSkills] = useState<
+    Array<{
+      skillId: string
+      skillName: string
+      skillCategory?: string
+      priority: number
+      enabled: boolean
+    }>
+  >([])
 
-  function toggleSkill(id: string) {
+  function handleToggle(skillId: string, enabled: boolean) {
     setSkills((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, enabled: !s.enabled } : s)),
+      prev.map((s) => (s.skillId === skillId ? { ...s, enabled } : s)),
     )
   }
 
-  function removeSkill(id: string) {
-    setSkills((prev) => prev.filter((s) => s.id !== id))
+  function handleRemove(skillId: string) {
+    setSkills((prev) => prev.filter((s) => s.skillId !== skillId))
   }
 
-  function handleDragStart(index: number) {
-    setDragIndex(index)
-  }
-
-  function handleDragOver(e: React.DragEvent, overIndex: number) {
-    e.preventDefault()
-    if (dragIndex === null || dragIndex === overIndex) return
-    const reordered = [...skills]
-    const [moved] = reordered.splice(dragIndex, 1)
-    reordered.splice(overIndex, 0, moved)
-    const withPriority = reordered.map((s, i) => ({ ...s, priority: i }))
-    setSkills(withPriority)
-    setDragIndex(overIndex)
-  }
-
-  function handleDragEnd() {
-    setDragIndex(null)
-  }
-
-  if (skills.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-3 py-12 text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-          <Bot className="h-6 w-6 text-muted-foreground" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <p className="text-sm font-medium">No skills attached</p>
-          <p className="text-xs text-muted-foreground">
-            Browse the marketplace to add abilities
-          </p>
-        </div>
-        <Button size="sm" variant="outline" className="gap-1.5">
-          <Plus className="h-3.5 w-3.5" />
-          Add Skill
-        </Button>
-      </div>
+  function handleReorder(
+    reordered: ReadonlyArray<{ skillId: string; priority: number }>,
+  ) {
+    setSkills((prev) =>
+      reordered.map(({ skillId, priority }) => {
+        const existing = prev.find((s) => s.skillId === skillId)
+        return existing ? { ...existing, priority } : { skillId, skillName: skillId, priority, enabled: true }
+      }),
     )
   }
 
   return (
-    <div className="flex flex-col gap-4 py-4">
-      <div className="flex flex-col gap-1" role="list" aria-label="Attached skills">
-        {skills.map((skill, index) => (
-          <div
-            key={skill.id}
-            role="listitem"
-            draggable
-            onDragStart={() => handleDragStart(index)}
-            onDragOver={(e) => handleDragOver(e, index)}
-            onDragEnd={handleDragEnd}
-            className={cn(
-              'flex items-center gap-2 rounded-md border bg-card p-3 transition-opacity',
-              dragIndex === index && 'opacity-50',
-            )}
-          >
-            <GripVertical className="h-4 w-4 shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">{skill.name}</p>
-              <p className="truncate text-xs text-muted-foreground">{skill.description}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => toggleSkill(skill.id)}
-              role="switch"
-              aria-checked={skill.enabled}
-              aria-label={`${skill.enabled ? 'Disable' : 'Enable'} ${skill.name}`}
-              className={cn(
-                'relative h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
-                skill.enabled ? 'bg-primary' : 'bg-muted',
-              )}
-            >
-              <span
-                className={cn(
-                  'block h-4 w-4 rounded-full bg-white shadow-sm transition-transform',
-                  skill.enabled ? 'translate-x-4' : 'translate-x-0',
-                )}
-              />
-            </button>
-            <button
-              type="button"
-              onClick={() => removeSkill(skill.id)}
-              aria-label={`Remove ${skill.name}`}
-              className="shrink-0 text-muted-foreground hover:text-destructive"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ))}
-      </div>
-      <Button size="sm" variant="outline" className="self-start gap-1.5">
-        <Plus className="h-3.5 w-3.5" />
-        Add Skill
-      </Button>
-    </div>
+    <AgentSkillsTab
+      agentId={agentId}
+      skills={skills}
+      onToggle={handleToggle}
+      onRemove={handleRemove}
+      onReorder={handleReorder}
+      onOpenMarketplace={onOpenMarketplace}
+    />
   )
 }
 
@@ -676,7 +606,7 @@ function ConversationsTab({ agentId }: { readonly agentId: string }) {
 // Main Component
 // ---------------------------------------------------------------------------
 
-export function AgentDrawer({ agent, open, onOpenChange, onSave }: AgentDrawerProps) {
+export function AgentDrawer({ agent, open, onOpenChange, onSave, onOpenMarketplace }: AgentDrawerProps) {
   const [activeTab, setActiveTab] = useState('settings')
 
   // Reset to settings tab when a new agent is selected
@@ -751,7 +681,10 @@ export function AgentDrawer({ agent, open, onOpenChange, onSave }: AgentDrawerPr
                 </TabsContent>
 
                 <TabsContent value="skills" className="mt-0">
-                  <SkillsTab />
+                  <SkillsTab
+                    agentId={agent.id}
+                    onOpenMarketplace={onOpenMarketplace ?? (() => undefined)}
+                  />
                 </TabsContent>
 
                 <TabsContent value="safety" className="mt-0">

@@ -11,6 +11,7 @@ import { OrchestraCanvas, type UndoRedoControls } from '@/components/canvas/orch
 import { ShortcutOverlay } from '@/components/shell/shortcut-overlay'
 import { AgentChat } from '@/components/panels/agent-chat'
 import { ApprovalDialog } from '@/components/panels/approval-dialog'
+import { SkillMarketplace } from '@/components/panels/skill-marketplace'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { useSocket } from '@/hooks/use-socket'
 import { useNotifications } from '@/hooks/use-notifications'
@@ -35,6 +36,7 @@ export default function Home() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [selectedAgent, setSelectedAgent] = useState<SelectedAgent | null>(null)
   const [chatOpen, setChatOpen] = useState(false)
+  const [marketplaceOpen, setMarketplaceOpen] = useState(false)
 
   const { connected, connecting, error: socketError } = useSocket()
 
@@ -102,7 +104,7 @@ export default function Home() {
   }, [])
 
   const handleToggleMarketplace = useCallback(() => {
-    // Placeholder: toggle skills marketplace sidebar when available
+    setMarketplaceOpen((prev) => !prev)
   }, [])
 
   const handleToggleShortcuts = useCallback(() => {
@@ -112,6 +114,7 @@ export default function Home() {
   const handleEscape = useCallback(() => {
     setShortcutsOpen(false)
     setChatOpen(false)
+    setMarketplaceOpen(false)
     setNodes((prev) =>
       prev.map((n) => ({ ...n, selected: false })),
     )
@@ -199,7 +202,7 @@ export default function Home() {
         onReviewApproval={handleReviewApproval}
       />
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
+        <Sidebar onSkillsClick={handleToggleMarketplace} />
         <main className="relative flex-1 overflow-hidden">
           {/* Canvas is always mounted so React Flow can initialise; it is
               hidden (not unmounted) when the placeholder is shown so we don't
@@ -230,6 +233,12 @@ export default function Home() {
       <ShortcutOverlay
         open={shortcutsOpen}
         onOpenChange={setShortcutsOpen}
+      />
+
+      {/* Skill Marketplace Sheet — opens from sidebar or command palette */}
+      <SkillMarketplace
+        open={marketplaceOpen}
+        onOpenChange={setMarketplaceOpen}
       />
 
       {/* AgentChat Sheet — opens when an agent node is double-clicked */}

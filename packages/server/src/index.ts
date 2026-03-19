@@ -13,6 +13,7 @@ import { approvalRoutes } from './routes/approvals'
 import { ProcessManager } from './engine/process-manager'
 import { ApprovalManager } from './engine/approval-manager'
 import { registerSocketHandlers } from './socket/handlers'
+import { ensureSkillsDirectory } from './skills/installer'
 
 const PORT = parseInt(process.env.PORT ?? '3001', 10)
 const UI_ORIGIN = process.env.UI_ORIGIN ?? 'http://localhost:3000'
@@ -20,6 +21,9 @@ const UI_ORIGIN = process.env.UI_ORIGIN ?? 'http://localhost:3000'
 async function main() {
   const processManager = new ProcessManager()
   const approvalManager = new ApprovalManager()
+
+  // Ensure ~/.orchestra/skills/ exists before anything else touches the filesystem
+  await ensureSkillsDirectory()
 
   // [G2] Prerequisites validation
   const prereqs = await checkPrerequisites()
