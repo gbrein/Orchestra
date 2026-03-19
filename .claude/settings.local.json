@@ -1,0 +1,53 @@
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "4"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(grep -E '\\\\.\\(json|yml|yaml|ts|js|gitignore\\)$|^d')",
+      "Bash(npm search:*)",
+      "Bash(claude:*)",
+      "Bash(npm info:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(ls -la ~/.claude/*.json)",
+      "Bash(find /c/Users/gbrei/.claude/skills/ -maxdepth 2 -type f -name *.md)",
+      "Bash(xargs grep:*)",
+      "Bash(find ~/.claude -name orchestrate* -o -name *orchestr*)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(npx create-next-app@14 . --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --no-git --use-npm)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(git status:*)",
+      "Bash(npx shadcn-ui@latest init -y --defaults)",
+      "Bash(npx shadcn@latest init -y --defaults)",
+      "Bash(npx shadcn@latest add dialog sheet toast input card badge dropdown-menu tooltip separator tabs textarea -y)",
+      "Bash(npx shadcn@latest add dialog sheet input card badge dropdown-menu tooltip separator tabs textarea -y)",
+      "Bash(npx next:*)",
+      "Bash(rm -rf src/components/ui)",
+      "Bash(rm -f components.json)",
+      "Bash(npm uninstall:*)",
+      "Bash(npx shadcn-ui@0.8.0 init -y -d)",
+      "Bash(find /c/Users/gbrei/orchestrator/packages -name index.ts -path */shared/*)",
+      "Bash(find /c/Users/gbrei/orchestrator/packages/shared -name *.ts)",
+      "Bash(find /c/Users/gbrei/orchestrator/node_modules/@xyflow -name *.d.ts)",
+      "Bash(find /c/Users/gbrei/orchestrator/packages/ui/node_modules/@xyflow -name *.d.ts)",
+      "Bash(npm run:*)",
+      "Bash(git -C /c/Users/gbrei/orchestrator log --oneline src/components/panels/agent-drawer.tsx)",
+      "Bash(git -C /c/Users/gbrei/orchestrator/packages/ui log --oneline -- src/components/panels/agent-drawer.tsx)",
+      "Bash(git -C /c/Users/gbrei/orchestrator status --short)",
+      "Bash(find /c/Users/gbrei/orchestrator/packages/shared/src -type f -name *.ts)",
+      "Bash(node -e \"const {Prisma} = require\\(''''@prisma/client''''\\); console.log\\(Object.keys\\(Prisma\\).filter\\(k => k.includes\\(''''AgentSkill''''\\)\\).join\\(''''\\\\n''''\\)\\)\")",
+      "Bash(node -e \"const p = require\\(''@prisma/client''\\); console.log\\(Object.keys\\(p\\).filter\\(k => k.toLowerCase\\(\\).includes\\(''payload''\\)\\).slice\\(0,10\\).join\\(''\\\\n''\\)\\)\")",
+      "Bash(node -e \"const p = require\\(''@prisma/client''\\); console.log\\(Object.keys\\(p\\).filter\\(k => k.includes\\(''Agent''\\) || k.includes\\(''Prisma''\\)\\).slice\\(0, 20\\)\\)\")",
+      "Bash(find /c/Users/gbrei/orchestrator -name index.d.ts -path *prisma*)",
+      "Bash(git push:*)",
+      "Bash(node -e \"const p = require\\(''@prisma/client''\\); console.log\\(Object.keys\\(p\\).filter\\(k => k.toLowerCase\\(\\).includes\\(''mcp''\\)\\)\\)\")",
+      "Bash(npx prisma:*)",
+      "Bash(git remote:*)",
+      "Bash(npm test:*)",
+      "Bash(npx vitest:*)"
+    ]
+  }
+}

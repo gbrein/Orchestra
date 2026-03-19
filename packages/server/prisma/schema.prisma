@@ -1,0 +1,265 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum AgentStatus {
+  idle
+  running
+  waiting_approval
+  error
+}
+
+enum PolicyLevel {
+  global
+  agent
+  session
+}
+
+enum SkillSource {
+  marketplace
+  git
+}
+
+enum DiscussionFormat {
+  brainstorm
+  review
+  deliberation
+}
+
+enum DiscussionStatus {
+  draft
+  active
+  concluded
+}
+
+enum ParticipantRole {
+  participant
+  observer
+  devil_advocate
+}
+
+enum MessageRole {
+  user
+  assistant
+  system
+  tool
+}
+
+enum StoryStatus {
+  pending
+  in_progress
+  passed
+  failed
+}
+
+model Agent {
+  id              String       @id @default(uuid())
+  name            String
+  avatar          String?
+  description     String?
+  persona         String
+  purpose         String?
+  scope           String[]
+  allowedTools    String[]
+  memoryEnabled   Boolean      @default(false)
+  model           String?
+  status          AgentStatus  @default(idle)
+  loopEnabled     Boolean      @default(false)
+  loopCriteria    Json?
+  maxIterations   Int          @default(10)
+  teamEnabled     Boolean      @default(false)
+  canvasX         Float        @default(0)
+  canvasY         Float        @default(0)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  skills             AgentSkill[]
+  policies           Policy[]
+  memories           Memory[]
+  sessions           Session[]
+  participations     TableParticipant[]
+  moderatedTables    DiscussionTable[]   @relation("moderator")
+  mcpAssignments     AgentMcpServer[]
+}
+
+model Skill {
+  id          String      @id @default(uuid())
+  name        String      @unique
+  description String
+  source      SkillSource
+  gitUrl      String?
+  path        String
+  version     String?
+  author      String?
+  category    String?
+  icon        String?
+  mcpConfig   Json?
+  installedAt DateTime    @default(now())
+
+  agents AgentSkill[]
+}
+
+model AgentSkill {
+  agentId  String
+  skillId  String
+  priority Int     @default(0)
+  enabled  Boolean @default(true)
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([agentId, skillId])
+}
+
+model Policy {
+  id        String      @id @default(uuid())
+  name      String
+  level     PolicyLevel
+  rules     Json
+  agentId   String?
+  sessionId String?
+  createdAt DateTime    @default(now())
+
+  agent   Agent?   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  session Session? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model Session {
+  id        String    @id @default(uuid())
+  agentId   String?
+  tableId   String?
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  agent    Agent?           @relation(fields: [agentId], references: [id])
+  table    DiscussionTable? @relation(fields: [tableId], references: [id])
+  messages Message[]
+  policies Policy[]
+}
+
+model Message {
+  id         String      @id @default(uuid())
+  sessionId  String
+  role       MessageRole
+  content    String
+  toolUse    Json?
+  rawEvent   Json?
+  tokenCount Int?
+  timestamp  DateTime    @default(now())
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, timestamp])
+}
+
+model DiscussionTable {
+  id           String           @id @default(uuid())
+  name         String
+  topic        String
+  format       DiscussionFormat
+  moderatorId  String
+  status       DiscussionStatus @default(draft)
+  conclusion   String?
+  maxRounds    Int              @default(5)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  moderator    Agent              @relation("moderator", fields: [moderatorId], references: [id])
+  participants TableParticipant[]
+  sessions     Session[]
+}
+
+model TableParticipant {
+  tableId String
+  agentId String
+  role    ParticipantRole @default(participant)
+
+  table DiscussionTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  agent Agent           @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@id([tableId, agentId])
+}
+
+model Memory {
+  id        String   @id @default(uuid())
+  agentId   String
+  key       String
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, key])
+}
+
+model Workspace {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  canvasLayouts CanvasLayout[]
+}
+
+model CanvasLayout {
+  id          String   @id @default(uuid())
+  name        String   @default("default")
+  workspaceId String
+  viewport    Json
+  nodes       Json
+  edges       Json
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model McpServer {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  type        String   @default("stdio")
+  command     String
+  args        String[]
+  env         Json?
+  createdAt   DateTime @default(now())
+
+  agents AgentMcpServer[]
+}
+
+model AgentMcpServer {
+  agentId     String
+  mcpServerId String
+
+  agent     Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  mcpServer McpServer @relation(fields: [mcpServerId], references: [id], onDelete: Cascade)
+
+  @@id([agentId, mcpServerId])
+}
+
+model PRD {
+  id        String   @id @default(uuid())
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stories   Story[]
+}
+
+model Story {
+  id                 String      @id @default(uuid())
+  prdId              String
+  title              String
+  acceptanceCriteria String
+  status             StoryStatus @default(pending)
+  priority           Int         @default(0)
+
+  prd PRD @relation(fields: [prdId], references: [id], onDelete: Cascade)
+
+  @@index([prdId, priority])
+}
