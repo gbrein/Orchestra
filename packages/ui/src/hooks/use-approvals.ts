@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { socket } from '@/lib/socket'
+import { getSocket } from '@/lib/socket'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -78,6 +78,7 @@ export function useApprovals(): UseApprovalsReturn {
       })
     }
 
+    const socket = getSocket()
     socket.on('agent:approval', handleApproval)
 
     return () => {
@@ -91,7 +92,7 @@ export function useApprovals(): UseApprovalsReturn {
 
       if (!approval) return
 
-      socket.emit('approval:respond', {
+      getSocket().emit('approval:respond', {
         agentId: approval.agentId,
         approved: true,
         editedCommand,
@@ -112,7 +113,7 @@ export function useApprovals(): UseApprovalsReturn {
 
       if (!approval) return
 
-      socket.emit('approval:respond', {
+      getSocket().emit('approval:respond', {
         agentId: approval.agentId,
         approved: false,
       })

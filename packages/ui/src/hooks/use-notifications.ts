@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { socket } from '@/lib/socket'
+import { getSocket } from '@/lib/socket'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -187,16 +187,17 @@ export function useNotifications(): UseNotificationsReturn {
       setNotifications((prev) => [newNotification, ...prev])
     }
 
-    socket.on('notification', handleNotification)
-    socket.on('agent:approval', handleApproval)
-    socket.on('agent:error', handleAgentError)
-    socket.on('agent:done', handleAgentDone)
+    const sock = getSocket()
+    sock.on('notification', handleNotification)
+    sock.on('agent:approval', handleApproval)
+    sock.on('agent:error', handleAgentError)
+    sock.on('agent:done', handleAgentDone)
 
     return () => {
-      socket.off('notification', handleNotification)
-      socket.off('agent:approval', handleApproval)
-      socket.off('agent:error', handleAgentError)
-      socket.off('agent:done', handleAgentDone)
+      sock.off('notification', handleNotification)
+      sock.off('agent:approval', handleApproval)
+      sock.off('agent:error', handleAgentError)
+      sock.off('agent:done', handleAgentDone)
     }
   }, [])
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { TokenUsage } from '@orchestra/shared'
-import { socket } from '@/lib/socket'
+import { getSocket } from '@/lib/socket'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -224,6 +224,7 @@ export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
       })
     }
 
+    const socket = getSocket()
     socket.on('agent:text', handleText)
     socket.on('agent:tool_use', handleToolUse)
     socket.on('agent:tool_result', handleToolResult)
@@ -231,11 +232,12 @@ export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
     socket.on('agent:done', handleDone)
 
     return () => {
-      socket.off('agent:text', handleText)
-      socket.off('agent:tool_use', handleToolUse)
-      socket.off('agent:tool_result', handleToolResult)
-      socket.off('agent:error', handleError)
-      socket.off('agent:done', handleDone)
+      const s = getSocket()
+      s.off('agent:text', handleText)
+      s.off('agent:tool_use', handleToolUse)
+      s.off('agent:tool_result', handleToolResult)
+      s.off('agent:error', handleError)
+      s.off('agent:done', handleDone)
     }
   }, [agentId])
 
@@ -256,11 +258,13 @@ export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
         },
       ])
 
+      const sock = getSocket()
+      if (!sock.connected) sock.connect()
       if (isStreaming) {
-        socket.emit('agent:message', { agentId, message: trimmed })
+        sock.emit('agent:message', { agentId, message: trimmed })
       } else {
         setIsStreaming(true)
-        socket.emit('agent:start', { agentId, message: trimmed })
+        sock.emit('agent:start', { agentId, message: trimmed })
       }
     },
     [agentId, isStreaming],
@@ -268,7 +272,7 @@ export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
 
   const stopAgent = useCallback(() => {
     if (!agentId) return
-    socket.emit('agent:stop', { agentId })
+    getSocket().emit('agent:stop', { agentId })
     setIsStreaming(false)
     streamingMessageIdRef.current = null
     // Finalize any partial message

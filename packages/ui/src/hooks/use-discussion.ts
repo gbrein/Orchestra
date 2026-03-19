@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { socket } from '@/lib/socket'
+import { getSocket } from '@/lib/socket'
 import type { DiscussionStatus } from '@orchestra/shared'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -108,6 +108,7 @@ export function useDiscussion(tableId: string | null): UseDiscussionReturn {
       setStatus('concluded')
     }
 
+    const socket = getSocket()
     socket.on('discussion:turn', handleTurn)
     socket.on('discussion:moderator', handleModerator)
     socket.on('discussion:concluded', handleConcluded)
@@ -121,18 +122,18 @@ export function useDiscussion(tableId: string | null): UseDiscussionReturn {
 
   const start = useCallback(() => {
     if (!tableId) return
-    socket.emit('discussion:start', { tableId })
+    getSocket().emit('discussion:start', { tableId })
     setStatus('active')
   }, [tableId])
 
   const pause = useCallback(() => {
     if (!tableId) return
-    socket.emit('discussion:pause', { tableId })
+    getSocket().emit('discussion:pause', { tableId })
   }, [tableId])
 
   const resume = useCallback(() => {
     if (!tableId) return
-    socket.emit('discussion:resume', { tableId })
+    getSocket().emit('discussion:resume', { tableId })
   }, [tableId])
 
   const isRunning = status === 'active'
