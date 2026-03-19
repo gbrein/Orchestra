@@ -11,78 +11,91 @@ interface CanvasLayout {
   edges: Edge[]
 }
 
-interface Workspace {
+export interface PersistWorkspace {
   id: string
   name: string
 }
 
 interface UseCanvasPersistenceReturn {
+  workspaces: PersistWorkspace[]
+  activeWorkspaceId: string
   loaded: boolean
   saving: boolean
-  lastSavedAt: Date | null
   loadCanvas: () => Promise<{ nodes: Node[]; edges: Edge[] } | null>
   saveCanvas: (nodes: Node[], edges: Edge[]) => void
+  switchWorkspace: (id: string) => Promise<{ nodes: Node[]; edges: Edge[] } | null>
+  createWorkspace: (name: string) => Promise<string>
 }
 
 const DEBOUNCE_MS = 2000
 
 export function useCanvasPersistence(): UseCanvasPersistenceReturn {
+  const [workspaces, setWorkspaces] = useState<PersistWorkspace[]>([])
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState('')
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
 
-  const workspaceIdRef = useRef<string | null>(null)
+  const activeIdRef = useRef('')
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Ensure a workspace exists
-  const ensureWorkspace = useCallback(async (): Promise<string> => {
-    if (workspaceIdRef.current) return workspaceIdRef.current
-
+  // Fetch workspaces from API
+  const fetchWorkspaces = useCallback(async (): Promise<PersistWorkspace[]> => {
     try {
-      const workspaces = await apiGet<Workspace[]>('/api/workspaces')
-      if (workspaces.length > 0) {
-        workspaceIdRef.current = workspaces[0].id
-        return workspaces[0].id
-      }
+      const list = await apiGet<PersistWorkspace[]>('/api/workspaces')
+      setWorkspaces(list)
+      return list
     } catch {
-      // server down
+      return []
+    }
+  }, [])
+
+  // Ensure at least one workspace exists
+  const ensureWorkspace = useCallback(async (): Promise<string> => {
+    if (activeIdRef.current) return activeIdRef.current
+
+    const list = await fetchWorkspaces()
+    if (list.length > 0) {
+      activeIdRef.current = list[0].id
+      setActiveWorkspaceId(list[0].id)
+      return list[0].id
     }
 
     try {
-      const created = await apiPost<Workspace>('/api/workspaces', { name: 'My Workspace' })
-      workspaceIdRef.current = created.id
+      const created = await apiPost<PersistWorkspace>('/api/workspaces', { name: 'My Workspace' })
+      activeIdRef.current = created.id
+      setActiveWorkspaceId(created.id)
+      setWorkspaces([created])
       return created.id
     } catch {
       return ''
     }
-  }, [])
+  }, [fetchWorkspaces])
 
-  const loadCanvas = useCallback(async (): Promise<{ nodes: Node[]; edges: Edge[] } | null> => {
+  // Load canvas for a specific workspace
+  const loadCanvasForWorkspace = useCallback(async (wsId: string): Promise<{ nodes: Node[]; edges: Edge[] } | null> => {
+    if (!wsId) return null
     try {
-      const wsId = await ensureWorkspace()
-      console.log('[canvas-persist] loadCanvas wsId=', wsId)
-      if (!wsId) { setLoaded(true); return null }
-
       const layout = await apiGet<CanvasLayout | null>(`/api/workspaces/${wsId}/canvas`)
-      setLoaded(true)
-
       if (layout?.nodes?.length) {
         return { nodes: layout.nodes, edges: layout.edges ?? [] }
       }
       return null
     } catch {
-      setLoaded(true)
       return null
     }
-  }, [ensureWorkspace])
+  }, [])
 
+  // Load canvas for the active workspace
+  const loadCanvas = useCallback(async (): Promise<{ nodes: Node[]; edges: Edge[] } | null> => {
+    const wsId = await ensureWorkspace()
+    setLoaded(true)
+    return loadCanvasForWorkspace(wsId)
+  }, [ensureWorkspace, loadCanvasForWorkspace])
+
+  // Save canvas (debounced)
   const doSave = useCallback(async (nodes: Node[], edges: Edge[]) => {
-    const wsId = workspaceIdRef.current
-    if (!wsId || nodes.length === 0) {
-      console.log('[canvas-persist] skip save: wsId=', wsId, 'nodes=', nodes.length)
-      return
-    }
-    console.log('[canvas-persist] saving', nodes.length, 'nodes to workspace', wsId)
+    const wsId = activeIdRef.current
+    if (!wsId || nodes.length === 0) return
 
     setSaving(true)
     try {
@@ -103,10 +116,8 @@ export function useCanvasPersistence(): UseCanvasPersistenceReturn {
           data: e.data,
         })),
       })
-      setLastSavedAt(new Date())
-      console.log('[canvas-persist] saved OK')
-    } catch (err) {
-      console.error('[canvas-persist] save failed:', err)
+    } catch {
+      // silent retry next time
     } finally {
       setSaving(false)
     }
@@ -119,11 +130,45 @@ export function useCanvasPersistence(): UseCanvasPersistenceReturn {
     }, DEBOUNCE_MS)
   }, [doSave])
 
+  // Switch to a different workspace
+  const switchWorkspace = useCallback(async (id: string): Promise<{ nodes: Node[]; edges: Edge[] } | null> => {
+    // Save current workspace first (flush)
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = null
+    }
+    activeIdRef.current = id
+    setActiveWorkspaceId(id)
+    return loadCanvasForWorkspace(id)
+  }, [loadCanvasForWorkspace])
+
+  // Create a new workspace
+  const createWorkspace = useCallback(async (name: string): Promise<string> => {
+    try {
+      const created = await apiPost<PersistWorkspace>('/api/workspaces', { name })
+      setWorkspaces((prev) => [...prev, created])
+      activeIdRef.current = created.id
+      setActiveWorkspaceId(created.id)
+      return created.id
+    } catch {
+      return ''
+    }
+  }, [])
+
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     }
   }, [])
 
-  return { loaded, saving, lastSavedAt, loadCanvas, saveCanvas }
+  return {
+    workspaces,
+    activeWorkspaceId,
+    loaded,
+    saving,
+    loadCanvas,
+    saveCanvas,
+    switchWorkspace,
+    createWorkspace,
+  }
 }

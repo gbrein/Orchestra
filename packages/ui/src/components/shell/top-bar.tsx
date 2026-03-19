@@ -21,22 +21,17 @@ export interface TopBarProps {
   readonly onAcknowledgeAll?: () => void
   readonly onRemoveNotification?: (id: string) => void
   readonly onReviewApproval?: (notification: OrchestraNotification) => void
+  readonly workspaces?: readonly Workspace[]
+  readonly activeWorkspaceId?: string
   readonly onHomeClick?: () => void
   readonly onWorkspaceClick?: () => void
-  readonly onWorkspaceChange?: (id: string) => void
+  readonly onSelectWorkspace?: (id: string) => void
+  readonly onCreateWorkspace?: (name: string) => void
   readonly onDiscussionsClick?: () => void
   readonly onHistoryClick?: () => void
   readonly onSettingsClick?: () => void
   readonly activeTab?: TopBarTab
 }
-
-// ─── Default workspaces state ───────────────────────────────────────────────
-// Kept module-level so the state survives re-renders of TopBar without being
-// lifted further. For a real app, this would live in a context or the page.
-
-const DEFAULT_WORKSPACES: Workspace[] = [
-  { id: 'default', name: 'My Workspace' },
-]
 
 // ─── TopBar ────────────────────────────────────────────────────────────────
 
@@ -47,9 +42,12 @@ export function TopBar({
   onAcknowledgeAll,
   onRemoveNotification,
   onReviewApproval,
+  workspaces = [],
+  activeWorkspaceId = '',
   onHomeClick,
   onWorkspaceClick,
-  onWorkspaceChange,
+  onSelectWorkspace,
+  onCreateWorkspace,
   onDiscussionsClick,
   onHistoryClick,
   onSettingsClick,
@@ -59,28 +57,12 @@ export function TopBar({
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false)
   const bellButtonRef = useRef<HTMLButtonElement>(null)
 
-  const [workspaces, setWorkspaces] = useState<Workspace[]>(DEFAULT_WORKSPACES)
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState('default')
-
   function toggleNotificationPanel() {
     setNotificationPanelOpen((prev) => !prev)
   }
 
   function closeNotificationPanel() {
     setNotificationPanelOpen(false)
-  }
-
-  function handleSelectWorkspace(id: string) {
-    setActiveWorkspaceId(id)
-    onWorkspaceChange?.(id)
-  }
-
-  function handleCreateWorkspace(name: string) {
-    const id = crypto.randomUUID()
-    const next: Workspace = { id, name }
-    setWorkspaces((prev) => [...prev, next])
-    setActiveWorkspaceId(id)
-    onWorkspaceChange?.(id)
   }
 
   return (
@@ -92,8 +74,8 @@ export function TopBar({
         <WorkspaceSwitcher
           workspaces={workspaces}
           activeId={activeWorkspaceId}
-          onSelect={handleSelectWorkspace}
-          onCreateWorkspace={handleCreateWorkspace}
+          onSelect={onSelectWorkspace ?? (() => {})}
+          onCreateWorkspace={onCreateWorkspace ?? (() => {})}
         />
       </div>
 

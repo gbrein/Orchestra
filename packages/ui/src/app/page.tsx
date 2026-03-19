@@ -92,7 +92,10 @@ export default function Home() {
 
   const [zoomLevel, setZoomLevel] = useState(100)
   const { value: complexity, refresh: refreshComplexity } = useComplexityState()
-  const { loaded: canvasLoaded, saving: canvasSaving, lastSavedAt, loadCanvas, saveCanvas } = useCanvasPersistence()
+  const {
+    workspaces, activeWorkspaceId, loaded: canvasLoaded,
+    loadCanvas, saveCanvas, switchWorkspace, createWorkspace,
+  } = useCanvasPersistence()
 
   const handleSettingsClose = useCallback((open: boolean) => {
     setSettingsOpen(open)
@@ -366,11 +369,29 @@ export default function Home() {
     setSettingsOpen(true)
   }, [])
 
-  // TopBar workspace change callback
-  const handleWorkspaceChange = useCallback((_id: string) => {
-    // In production, persist to server; for now just switch active tab back to workspace
+  const handleSelectWorkspace = useCallback(async (id: string) => {
+    // Save current canvas first, then switch
+    if (nodes.length > 0) saveCanvas(nodes, edges)
+    const data = await switchWorkspace(id)
+    setNodes(data?.nodes ?? [])
+    setEdges(data?.edges ?? [])
+    setShowHome(false)
     setActiveTab('workspace')
-  }, [])
+    setTimeout(() => {
+      viewRef.current?.fitView()
+      const z = viewRef.current?.getZoom()
+      if (z) setZoomLevel(Math.round(z * 100))
+    }, 300)
+  }, [nodes, edges, saveCanvas, switchWorkspace])
+
+  const handleCreateWorkspace = useCallback(async (name: string) => {
+    if (nodes.length > 0) saveCanvas(nodes, edges)
+    await createWorkspace(name)
+    setNodes([])
+    setEdges([])
+    setShowHome(false)
+    setActiveTab('workspace')
+  }, [nodes, edges, saveCanvas, createWorkspace])
 
   const handleAssistantsClick = useCallback(() => {
     setAssistantsListOpen(true)
@@ -597,9 +618,12 @@ export default function Home() {
         onAcknowledgeAll={acknowledgeAll}
         onRemoveNotification={removeNotification}
         onReviewApproval={handleReviewApproval}
+        workspaces={workspaces}
+        activeWorkspaceId={activeWorkspaceId}
         onHomeClick={() => setShowHome(true)}
         onWorkspaceClick={goToWorkspace}
-        onWorkspaceChange={handleWorkspaceChange}
+        onSelectWorkspace={handleSelectWorkspace}
+        onCreateWorkspace={handleCreateWorkspace}
         onDiscussionsClick={handleTopBarDiscussionsClick}
         onHistoryClick={handleTopBarHistoryClick}
         onSettingsClick={handleSettingsClick}
