@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Node, Edge } from '@xyflow/react'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { Sidebar } from '@/components/shell/sidebar'
@@ -32,6 +32,7 @@ import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { ComplexityContext, useComplexityState } from '@/hooks/use-complexity'
 import { useSocket } from '@/hooks/use-socket'
+import { useCanvasPersistence } from '@/hooks/use-canvas-persistence'
 import { useNotifications } from '@/hooks/use-notifications'
 import { useApprovals } from '@/hooks/use-approvals'
 import type { AgentNodeData } from '@/lib/canvas-utils'
@@ -89,6 +90,7 @@ export default function Home() {
 
   const [zoomLevel, setZoomLevel] = useState(100)
   const { value: complexity, refresh: refreshComplexity } = useComplexityState()
+  const { loaded: canvasLoaded, saving: canvasSaving, lastSavedAt, loadCanvas, saveCanvas } = useCanvasPersistence()
 
   const handleSettingsClose = useCallback((open: boolean) => {
     setSettingsOpen(open)
@@ -143,6 +145,19 @@ export default function Home() {
       if (z) setZoomLevel(Math.round(z * 100))
     }, 100)
   }, [])
+
+  // Load canvas from DB on mount
+  const loadedRef = useRef(false)
+  useEffect(() => {
+    if (loadedRef.current) return
+    loadedRef.current = true
+    void loadCanvas().then((data) => {
+      if (data) {
+        setNodes(data.nodes)
+        setEdges(data.edges)
+      }
+    })
+  }, [loadCanvas])
 
   const showCanvas = nodes.length > 0
 
@@ -534,6 +549,17 @@ export default function Home() {
   }, [])
 
   // ── Canvas nodes/edges sync ───────────────────────────────────────────
+
+  // Auto-save canvas on any change (debounced in the hook)
+  const nodesRef = useRef(nodes)
+  const edgesRef = useRef(edges)
+  nodesRef.current = nodes
+  edgesRef.current = edges
+
+  useEffect(() => {
+    if (!canvasLoaded || nodes.length === 0) return
+    saveCanvas(nodes, edges)
+  }, [nodes, edges, canvasLoaded, saveCanvas])
 
   const handleNodesChange = useCallback((updated: Node[]) => {
     setNodes(updated)
