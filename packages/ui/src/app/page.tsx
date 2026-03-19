@@ -12,7 +12,7 @@ import { TemplateGallery } from '@/components/canvas/template-gallery'
 import { CommandPalette } from '@/components/shell/command-palette'
 import type { CreateAgentInput } from '@orchestra/shared'
 import { createAgentNode } from '@/lib/canvas-utils'
-import { apiPost } from '@/lib/api'
+import { apiPost, apiDelete } from '@/lib/api'
 import { OrchestraCanvas, type UndoRedoControls } from '@/components/canvas/orchestra-canvas'
 import { ShortcutOverlay } from '@/components/shell/shortcut-overlay'
 import { AgentChat } from '@/components/panels/agent-chat'
@@ -393,6 +393,9 @@ export default function Home() {
 
   const handleDeleteAssistant = useCallback((id: string) => {
     setNodes((prev) => prev.filter((n) => n.id !== id))
+    setEdges((prev) => prev.filter((e) => e.source !== id && e.target !== id))
+    // Also delete from DB
+    void apiDelete(`/api/agents/${id}`).catch(() => {})
   }, [])
 
   const handleConnectionsClick = useCallback(() => {
@@ -604,6 +607,7 @@ export default function Home() {
       />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
+          onHomeClick={() => setShowHome(true)}
           onCreateAgent={handleCreateAgent}
           onAssistantsClick={handleAssistantsClick}
           onSkillsClick={handleToggleMarketplace}

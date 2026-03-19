@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Bot, Puzzle, Shield, MessageSquare, Plug, PanelLeftClose, PanelLeft, Plus } from 'lucide-react'
+import { Bot, Puzzle, Shield, MessageSquare, Plug, PanelLeftClose, PanelLeft, Plus, Home } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -27,6 +27,7 @@ interface SidebarItem {
 }
 
 export interface SidebarProps {
+  readonly onHomeClick?: () => void
   readonly onCreateAgent?: () => void
   readonly onAssistantsClick?: () => void
   readonly onSkillsClick?: () => void
@@ -53,7 +54,7 @@ const ITEMS: readonly SidebarItem[] = [
 // Component
 // ---------------------------------------------------------------------------
 
-export function Sidebar({ onCreateAgent, onAssistantsClick, onSkillsClick, onSafetyClick, onDiscussionsClick, onConnectionsClick }: SidebarProps) {
+export function Sidebar({ onHomeClick, onCreateAgent, onAssistantsClick, onSkillsClick, onSafetyClick, onDiscussionsClick, onConnectionsClick }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const { tier } = useComplexity()
   const visibleItems = ITEMS.filter((item) => TIER_ORDER[tier] >= TIER_ORDER[item.minTier])
@@ -87,6 +88,27 @@ export function Sidebar({ onCreateAgent, onAssistantsClick, onSkillsClick, onSaf
       </div>
 
       <Separator />
+
+      {/* Home button */}
+      <div className="p-2 pb-0">
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn('w-full justify-start gap-2', collapsed && 'justify-center px-0')}
+              onClick={onHomeClick}
+              aria-label="Home"
+            >
+              <Home className="h-4 w-4 shrink-0" />
+              {!collapsed && <span className="flex-1 text-left text-xs">Home</span>}
+            </Button>
+          </TooltipTrigger>
+          {collapsed && (
+            <TooltipContent side="right" className="text-xs">Home</TooltipContent>
+          )}
+        </Tooltip>
+      </div>
 
       {/* Node palette */}
       <nav className="flex flex-1 flex-col gap-1 p-2" aria-label="Node palette">
