@@ -12,6 +12,7 @@ import { TemplateGallery } from '@/components/canvas/template-gallery'
 import { CommandPalette } from '@/components/shell/command-palette'
 import type { CreateAgentInput } from '@orchestra/shared'
 import { createAgentNode } from '@/lib/canvas-utils'
+import { apiPost } from '@/lib/api'
 import { OrchestraCanvas, type UndoRedoControls } from '@/components/canvas/orchestra-canvas'
 import { ShortcutOverlay } from '@/components/shell/shortcut-overlay'
 import { AgentChat } from '@/components/panels/agent-chat'
@@ -185,26 +186,89 @@ export default function Home() {
     setTemplateGalleryOpen(true)
   }, [])
 
-  const handleAgentCreated = useCallback((input: CreateAgentInput) => {
-    const node = createAgentNode(
-      { x: 300 + Math.random() * 200, y: 200 + Math.random() * 200 },
-      {
+  const handleAgentCreated = useCallback(async (input: CreateAgentInput) => {
+    try {
+      // Persist to DB so the backend can find this agent when spawning
+      const saved = await apiPost<{ id: string }>('/api/agents', {
         name: input.name,
+        persona: input.persona ?? `You are ${input.name}, a helpful assistant.`,
         description: input.description,
-        status: 'idle',
-        model: input.model,
         purpose: input.purpose,
-      },
-    )
-    setNodes((prev) => [...prev, node])
+        model: input.model,
+        scope: input.scope ?? [],
+        allowedTools: input.allowedTools ?? [],
+      })
+
+      const node = createAgentNode(
+        { x: 300 + Math.random() * 200, y: 200 + Math.random() * 200 },
+        {
+          name: input.name,
+          description: input.description,
+          status: 'idle',
+          model: input.model,
+          purpose: input.purpose,
+        },
+      )
+      // Use the DB id so the socket handler can find the agent
+      node.id = saved.id
+      setNodes((prev) => [...prev, node])
+    } catch {
+      // If API fails (server down), create local-only node
+      const node = createAgentNode(
+        { x: 300 + Math.random() * 200, y: 200 + Math.random() * 200 },
+        {
+          name: input.name,
+          description: input.description,
+          status: 'idle',
+          model: input.model,
+          purpose: input.purpose,
+        },
+      )
+      setNodes((prev) => [...prev, node])
+    }
     setCreateAgentOpen(false)
   }, [])
 
-  const handleTemplateSelected = useCallback((templateNodes: Node[], templateEdges: Edge[]) => {
-    setNodes(templateNodes)
-    setEdges(templateEdges)
+  const handleTemplateSelected = useCallback(async (templateNodes: Node[], templateEdges: Edge[]) => {
+    // Persist each agent node to DB so they can be spawned
+    const persistedNodes = await Promise.all(
+      templateNodes.map(async (node) => {
+        if (node.type !== 'agent') return node
+        const data = node.data as AgentNodeData
+        try {
+          const saved = await apiPost<{ id: string }>('/api/agents', {
+            name: data.name,
+            persona: `You are ${data.name}. ${data.description ?? ''}`.trim(),
+            description: data.description,
+            purpose: data.purpose,
+            model: data.model,
+            scope: [],
+            allowedTools: [],
+          })
+          return { ...node, id: saved.id }
+        } catch {
+          return node // keep local-only if server unavailable
+        }
+      }),
+    )
+
+    // Update edge source/target ids to match persisted agent ids
+    const idMap = new Map<string, string>()
+    templateNodes.forEach((orig, i) => {
+      if (orig.id !== persistedNodes[i].id) {
+        idMap.set(orig.id, persistedNodes[i].id)
+      }
+    })
+
+    const updatedEdges = templateEdges.map((edge) => ({
+      ...edge,
+      source: idMap.get(edge.source) ?? edge.source,
+      target: idMap.get(edge.target) ?? edge.target,
+    }))
+
+    setNodes(persistedNodes)
+    setEdges(updatedEdges)
     setTemplateGalleryOpen(false)
-    // Auto-fit view after nodes render
     setTimeout(() => {
       viewRef.current?.fitView()
       const z = viewRef.current?.getZoom()
@@ -212,19 +276,31 @@ export default function Home() {
     }, 200)
   }, [])
 
-  const handleDescribe = useCallback((description: string) => {
+  const handleDescribe = useCallback(async (description: string) => {
     const name = description.length > 30 ? description.slice(0, 30) + '...' : description
-    const node = createAgentNode(
-      { x: 300, y: 250 },
-      {
+    try {
+      const saved = await apiPost<{ id: string }>('/api/agents', {
         name,
+        persona: `You are a helpful assistant. The user described you as: "${description}". Follow these instructions carefully.`,
         description,
-        status: 'idle',
-        model: 'sonnet',
         purpose: 'general',
-      },
-    )
-    setNodes((prev) => [...prev, node])
+        model: 'sonnet',
+        scope: [],
+        allowedTools: [],
+      })
+      const node = createAgentNode(
+        { x: 300, y: 250 },
+        { name, description, status: 'idle', model: 'sonnet', purpose: 'general' },
+      )
+      node.id = saved.id
+      setNodes((prev) => [...prev, node])
+    } catch {
+      const node = createAgentNode(
+        { x: 300, y: 250 },
+        { name, description, status: 'idle', model: 'sonnet', purpose: 'general' },
+      )
+      setNodes((prev) => [...prev, node])
+    }
   }, [])
 
   const handleToggleMarketplace = useCallback(() => {
