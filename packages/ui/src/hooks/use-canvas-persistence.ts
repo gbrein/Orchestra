@@ -14,11 +14,9 @@ interface CanvasLayout {
 interface Workspace {
   id: string
   name: string
-  canvasLayouts?: Array<{ id: string }>
 }
 
 interface UseCanvasPersistenceReturn {
-  workspaceId: string | null
   loaded: boolean
   saving: boolean
   lastSavedAt: Date | null
@@ -29,38 +27,36 @@ interface UseCanvasPersistenceReturn {
 const DEBOUNCE_MS = 2000
 
 export function useCanvasPersistence(): UseCanvasPersistenceReturn {
-  const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
 
+  const workspaceIdRef = useRef<string | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pendingRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null)
 
-  // Ensure a workspace exists (create on first visit)
+  // Ensure a workspace exists
   const ensureWorkspace = useCallback(async (): Promise<string> => {
-    if (workspaceId) return workspaceId
+    if (workspaceIdRef.current) return workspaceIdRef.current
 
     try {
       const workspaces = await apiGet<Workspace[]>('/api/workspaces')
       if (workspaces.length > 0) {
-        setWorkspaceId(workspaces[0].id)
+        workspaceIdRef.current = workspaces[0].id
         return workspaces[0].id
       }
     } catch {
-      // server might be down
+      // server down
     }
 
     try {
       const created = await apiPost<Workspace>('/api/workspaces', { name: 'My Workspace' })
-      setWorkspaceId(created.id)
+      workspaceIdRef.current = created.id
       return created.id
     } catch {
       return ''
     }
-  }, [workspaceId])
+  }, [])
 
-  // Load canvas from server
   const loadCanvas = useCallback(async (): Promise<{ nodes: Node[]; edges: Edge[] } | null> => {
     try {
       const wsId = await ensureWorkspace()
@@ -69,7 +65,7 @@ export function useCanvasPersistence(): UseCanvasPersistenceReturn {
       const layout = await apiGet<CanvasLayout | null>(`/api/workspaces/${wsId}/canvas`)
       setLoaded(true)
 
-      if (layout && layout.nodes && layout.nodes.length > 0) {
+      if (layout?.nodes?.length) {
         return { nodes: layout.nodes, edges: layout.edges ?? [] }
       }
       return null
@@ -79,13 +75,13 @@ export function useCanvasPersistence(): UseCanvasPersistenceReturn {
     }
   }, [ensureWorkspace])
 
-  // Save canvas (debounced)
   const doSave = useCallback(async (nodes: Node[], edges: Edge[]) => {
-    if (!workspaceId || nodes.length === 0) return
+    const wsId = workspaceIdRef.current
+    if (!wsId || nodes.length === 0) return
 
     setSaving(true)
     try {
-      await apiPut(`/api/workspaces/${workspaceId}/canvas`, {
+      await apiPut(`/api/workspaces/${wsId}/canvas`, {
         name: 'default',
         viewport: { x: 0, y: 0, zoom: 1 },
         nodes: nodes.map((n) => ({
@@ -104,31 +100,24 @@ export function useCanvasPersistence(): UseCanvasPersistenceReturn {
       })
       setLastSavedAt(new Date())
     } catch {
-      // silent fail — next save will retry
+      // silent — next save will retry
     } finally {
       setSaving(false)
     }
-  }, [workspaceId])
+  }, [])
 
   const saveCanvas = useCallback((nodes: Node[], edges: Edge[]) => {
-    pendingRef.current = { nodes, edges }
-
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(() => {
-      const pending = pendingRef.current
-      if (pending) {
-        pendingRef.current = null
-        void doSave(pending.nodes, pending.edges)
-      }
+      void doSave(nodes, edges)
     }, DEBOUNCE_MS)
   }, [doSave])
 
-  // Cleanup timer on unmount
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     }
   }, [])
 
-  return { workspaceId, loaded, saving, lastSavedAt, loadCanvas, saveCanvas }
+  return { loaded, saving, lastSavedAt, loadCanvas, saveCanvas }
 }

@@ -741,7 +741,7 @@ export default function Home() {
       <Sheet open={chatOpen} onOpenChange={setChatOpen}>
         <SheetContent
           side="right"
-          className="flex w-[420px] flex-col gap-0 p-0 sm:w-[500px]"
+          className="flex w-[420px] flex-col gap-0 p-0 sm:w-[500px] [&>button.absolute]:hidden"
         >
           <SheetTitle className="sr-only">
             {selectedAgent ? `Chat with ${selectedAgent.name}` : 'Agent chat'}

@@ -405,59 +405,62 @@ export function AgentChat({
     <div className="flex h-full flex-col bg-background">
       {/* Header */}
       <header className="shrink-0 border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-start gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
             {agentName.charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold leading-tight">{agentName}</p>
-            <div className="mt-0.5 flex items-center gap-1.5">
+            <div className="mt-1 flex items-center gap-1.5">
               <StatusBadge status={agentStatus} />
               <ModelBadge model={agentModel} />
             </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {isStreaming && (
-              <Button
-                size="sm"
-                variant="destructive"
-                className="h-7 gap-1.5 px-2 text-xs"
-                onClick={stopAgent}
-                aria-label="Stop running agent"
-              >
-                <Square className="h-3 w-3 fill-current" aria-hidden />
-                Stop
-              </Button>
+            {(agentDescription || agentPurpose) && (
+              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground line-clamp-2">
+                {agentDescription || `Purpose: ${agentPurpose}`}
+              </p>
             )}
+          </div>
+        </div>
+        {/* Action bar */}
+        <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
+          <div className="flex items-center gap-1">
             {onEdit && (
               <Button
                 size="sm"
-                variant="ghost"
-                className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                variant="outline"
+                className="h-7 gap-1.5 px-2 text-xs"
                 onClick={onEdit}
                 aria-label="Edit assistant settings"
-                title="Edit assistant"
               >
-                <Pencil className="h-3.5 w-3.5" aria-hidden />
+                <Pencil className="h-3 w-3" aria-hidden />
+                Edit
               </Button>
             )}
             <Button
               size="sm"
               variant="ghost"
-              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+              className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
               onClick={clearMessages}
               aria-label="Clear conversation"
-              title="Clear conversation"
             >
-              <Trash2 className="h-3.5 w-3.5" aria-hidden />
+              <Trash2 className="h-3 w-3" aria-hidden />
+              Clear
             </Button>
           </div>
+          {isStreaming && (
+            <Button
+              size="sm"
+              variant="destructive"
+              className="h-7 gap-1.5 px-2 text-xs"
+              onClick={stopAgent}
+              aria-label="Stop running agent"
+            >
+              <Square className="h-3 w-3 fill-current" aria-hidden />
+              Stop
+            </Button>
+          )}
         </div>
-        {(agentDescription || agentPurpose) && (
-          <p className="mt-2 text-xs leading-relaxed text-muted-foreground line-clamp-2">
-            {agentDescription || `Purpose: ${agentPurpose}`}
-          </p>
-        )}
       </header>
 
       {/* Messages */}
