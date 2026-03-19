@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import { Server } from 'socket.io'
+import { createServer } from 'http'
 import type { ClientToServerEvents, ServerToClientEvents } from '@orchestra/shared'
 import { checkPrerequisites } from './lib/prerequisites'
 import { agentRoutes } from './routes/agents'
@@ -44,7 +45,13 @@ async function main() {
     console.warn('\nStarting with warnings...\n')
   }
 
-  const app = Fastify({ logger: true })
+  // Create a raw HTTP server so Socket.IO can attach to it before Fastify starts
+  const httpServer = createServer()
+
+  const app = Fastify({ logger: true, serverFactory: (handler) => {
+    httpServer.on('request', handler)
+    return httpServer
+  }})
 
   await app.register(cors, { origin: UI_ORIGIN })
 
@@ -74,11 +81,8 @@ async function main() {
     },
   }))
 
-  // Start the HTTP server first so app.server exists
-  await app.listen({ port: PORT, host: '0.0.0.0' })
-
-  // Socket.IO setup — must be after listen() so app.server is available
-  const io = new Server<ClientToServerEvents, ServerToClientEvents>(app.server, {
+  // Socket.IO setup — attach to the raw HTTP server (before Fastify listen)
+  const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
     cors: { origin: UI_ORIGIN, methods: ['GET', 'POST'] },
   })
 
@@ -132,6 +136,8 @@ async function main() {
 
   process.on('SIGINT', shutdown)
   process.on('SIGTERM', shutdown)
+
+  await app.listen({ port: PORT, host: '0.0.0.0' })
   console.log(`\nOrchestra server running on http://localhost:${PORT}`)
   console.log(`   Accepting connections from ${UI_ORIGIN}\n`)
 }
