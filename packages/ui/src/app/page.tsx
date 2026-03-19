@@ -17,6 +17,7 @@ import { DiscussionPanel } from '@/components/panels/discussion-panel'
 import { McpManagement, type McpServer } from '@/components/panels/mcp-management'
 import { ChainConfig, type ChainStep, type ConditionalEdge } from '@/components/panels/chain-config'
 import { PrdEditor, type PrdData } from '@/components/panels/prd-editor'
+import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { useSocket } from '@/hooks/use-socket'
 import { useNotifications } from '@/hooks/use-notifications'
@@ -296,19 +297,21 @@ export default function Home() {
           onConnectionsClick={handleConnectionsClick}
         />
         <main className="relative flex-1 overflow-hidden">
-          <div
-            className={showCanvas ? 'h-full w-full' : 'hidden'}
-            aria-hidden={!showCanvas}
-          >
-            <OrchestraCanvas
-              initialNodes={nodes}
-              onNodesChange={handleNodesChange}
-              onUndoRedoReady={handleUndoRedoReady}
-              onNodeDoubleClick={handleNodeDoubleClick}
-            />
-          </div>
+          <ErrorBoundary>
+            <div
+              className={showCanvas ? 'h-full w-full' : 'hidden'}
+              aria-hidden={!showCanvas}
+            >
+              <OrchestraCanvas
+                initialNodes={nodes}
+                onNodesChange={handleNodesChange}
+                onUndoRedoReady={handleUndoRedoReady}
+                onNodeDoubleClick={handleNodeDoubleClick}
+              />
+            </div>
 
-          {!showCanvas && <CanvasPlaceholder />}
+            {!showCanvas && <CanvasPlaceholder />}
+          </ErrorBoundary>
         </main>
       </div>
 
@@ -325,36 +328,44 @@ export default function Home() {
       />
 
       {/* Skill Marketplace */}
-      <SkillMarketplace
-        open={marketplaceOpen}
-        onOpenChange={setMarketplaceOpen}
-      />
+      <ErrorBoundary>
+        <SkillMarketplace
+          open={marketplaceOpen}
+          onOpenChange={setMarketplaceOpen}
+        />
+      </ErrorBoundary>
 
       {/* MCP Management */}
-      <McpManagement
-        open={mcpManagementOpen}
-        onOpenChange={setMcpManagementOpen}
-        servers={mcpServers}
-        onAdd={handleMcpAdd}
-        onEdit={handleMcpEdit}
-        onDelete={handleMcpDelete}
-      />
+      <ErrorBoundary>
+        <McpManagement
+          open={mcpManagementOpen}
+          onOpenChange={setMcpManagementOpen}
+          servers={mcpServers}
+          onAdd={handleMcpAdd}
+          onEdit={handleMcpEdit}
+          onDelete={handleMcpDelete}
+        />
+      </ErrorBoundary>
 
       {/* Chain Config */}
-      <ChainConfig
-        open={chainConfigOpen}
-        onOpenChange={setChainConfigOpen}
-        nodes={nodes}
-        edges={edges}
-        onExecute={handleChainExecute}
-      />
+      <ErrorBoundary>
+        <ChainConfig
+          open={chainConfigOpen}
+          onOpenChange={setChainConfigOpen}
+          nodes={nodes}
+          edges={edges}
+          onExecute={handleChainExecute}
+        />
+      </ErrorBoundary>
 
       {/* PRD Editor */}
-      <PrdEditor
-        open={prdEditorOpen}
-        onOpenChange={setPrdEditorOpen}
-        onStartPipeline={handlePrdStart}
-      />
+      <ErrorBoundary>
+        <PrdEditor
+          open={prdEditorOpen}
+          onOpenChange={setPrdEditorOpen}
+          onStartPipeline={handlePrdStart}
+        />
+      </ErrorBoundary>
 
       {/* AgentChat */}
       <Sheet open={chatOpen} onOpenChange={setChatOpen}>
@@ -363,41 +374,49 @@ export default function Home() {
           className="flex w-[420px] flex-col gap-0 p-0 sm:w-[500px]"
           aria-label={selectedAgent ? `Chat with ${selectedAgent.name}` : 'Agent chat'}
         >
-          {selectedAgent && (
-            <AgentChat
-              agentId={selectedAgent.id}
-              agentName={selectedAgent.name}
-              agentStatus={selectedAgent.status}
-              agentModel={selectedAgent.model}
-              onClose={handleChatClose}
-            />
-          )}
+          <ErrorBoundary>
+            {selectedAgent && (
+              <AgentChat
+                agentId={selectedAgent.id}
+                agentName={selectedAgent.name}
+                agentStatus={selectedAgent.status}
+                agentModel={selectedAgent.model}
+                onClose={handleChatClose}
+              />
+            )}
+          </ErrorBoundary>
         </SheetContent>
       </Sheet>
 
       {/* Approval Dialog */}
-      <ApprovalDialog
-        open={showApprovalDialog}
-        onOpenChange={handleApprovalDialogChange}
-        approval={approvalDialogData}
-        onApprove={approve}
-        onReject={reject}
-      />
+      <ErrorBoundary>
+        <ApprovalDialog
+          open={showApprovalDialog}
+          onOpenChange={handleApprovalDialogChange}
+          approval={approvalDialogData}
+          onApprove={approve}
+          onReject={reject}
+        />
+      </ErrorBoundary>
 
       {/* Discussion Wizard */}
-      <DiscussionWizard
-        open={discussionWizardOpen}
-        onOpenChange={setDiscussionWizardOpen}
-        agents={discussionAgents}
-        onCreate={handleDiscussionCreate}
-      />
+      <ErrorBoundary>
+        <DiscussionWizard
+          open={discussionWizardOpen}
+          onOpenChange={setDiscussionWizardOpen}
+          agents={discussionAgents}
+          onCreate={handleDiscussionCreate}
+        />
+      </ErrorBoundary>
 
       {/* Discussion Panel */}
-      <DiscussionPanel
-        open={discussionPanelOpen}
-        onOpenChange={setDiscussionPanelOpen}
-        discussion={selectedDiscussion}
-      />
+      <ErrorBoundary>
+        <DiscussionPanel
+          open={discussionPanelOpen}
+          onOpenChange={setDiscussionPanelOpen}
+          discussion={selectedDiscussion}
+        />
+      </ErrorBoundary>
     </div>
   )
 }

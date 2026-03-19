@@ -1,6 +1,6 @@
 {
   "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "2"
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "4"
   },
   "permissions": {
     "allow": [
@@ -28,7 +28,26 @@
       "Bash(rm -rf src/components/ui)",
       "Bash(rm -f components.json)",
       "Bash(npm uninstall:*)",
-      "Bash(npx shadcn-ui@0.8.0 init -y -d)"
+      "Bash(npx shadcn-ui@0.8.0 init -y -d)",
+      "Bash(find /c/Users/gbrei/orchestrator/packages -name index.ts -path */shared/*)",
+      "Bash(find /c/Users/gbrei/orchestrator/packages/shared -name *.ts)",
+      "Bash(find /c/Users/gbrei/orchestrator/node_modules/@xyflow -name *.d.ts)",
+      "Bash(find /c/Users/gbrei/orchestrator/packages/ui/node_modules/@xyflow -name *.d.ts)",
+      "Bash(npm run:*)",
+      "Bash(git -C /c/Users/gbrei/orchestrator log --oneline src/components/panels/agent-drawer.tsx)",
+      "Bash(git -C /c/Users/gbrei/orchestrator/packages/ui log --oneline -- src/components/panels/agent-drawer.tsx)",
+      "Bash(git -C /c/Users/gbrei/orchestrator status --short)",
+      "Bash(find /c/Users/gbrei/orchestrator/packages/shared/src -type f -name *.ts)",
+      "Bash(node -e \"const {Prisma} = require\\(''''@prisma/client''''\\); console.log\\(Object.keys\\(Prisma\\).filter\\(k => k.includes\\(''''AgentSkill''''\\)\\).join\\(''''\\\\n''''\\)\\)\")",
+      "Bash(node -e \"const p = require\\(''@prisma/client''\\); console.log\\(Object.keys\\(p\\).filter\\(k => k.toLowerCase\\(\\).includes\\(''payload''\\)\\).slice\\(0,10\\).join\\(''\\\\n''\\)\\)\")",
+      "Bash(node -e \"const p = require\\(''@prisma/client''\\); console.log\\(Object.keys\\(p\\).filter\\(k => k.includes\\(''Agent''\\) || k.includes\\(''Prisma''\\)\\).slice\\(0, 20\\)\\)\")",
+      "Bash(find /c/Users/gbrei/orchestrator -name index.d.ts -path *prisma*)",
+      "Bash(git push:*)",
+      "Bash(node -e \"const p = require\\(''@prisma/client''\\); console.log\\(Object.keys\\(p\\).filter\\(k => k.toLowerCase\\(\\).includes\\(''mcp''\\)\\)\\)\")",
+      "Bash(npx prisma:*)",
+      "Bash(git remote:*)",
+      "Bash(npm test:*)",
+      "Bash(npx vitest:*)"
     ]
   }
 }
