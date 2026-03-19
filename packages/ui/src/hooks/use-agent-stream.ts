@@ -259,7 +259,36 @@ export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
       ])
 
       const sock = getSocket()
-      if (!sock.connected) sock.connect()
+
+      // If not connected, try to connect and wait briefly
+      if (!sock.connected) {
+        sock.connect()
+
+        // Give 3 seconds to connect, then show error if failed
+        const connectTimeout = setTimeout(() => {
+          if (!sock.connected) {
+            setIsStreaming(false)
+            setError({
+              type: 'network',
+              message: 'Cannot reach the Orchestra server',
+              userMessage: 'Cannot reach the server at localhost:3001. Make sure the backend is running: npm run dev:server',
+              retryable: true,
+            })
+          }
+        }, 3000)
+
+        sock.once('connect', () => {
+          clearTimeout(connectTimeout)
+          if (isStreaming) {
+            sock.emit('agent:message', { agentId, message: trimmed })
+          } else {
+            setIsStreaming(true)
+            sock.emit('agent:start', { agentId, message: trimmed })
+          }
+        })
+        return
+      }
+
       if (isStreaming) {
         sock.emit('agent:message', { agentId, message: trimmed })
       } else {
