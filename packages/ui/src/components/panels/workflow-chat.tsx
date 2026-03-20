@@ -391,7 +391,10 @@ export function WorkflowChat({
             initialPath={dirInput || workingDirectory}
             onSelect={(path) => {
               setDirInput(path)
-              setDirSaved(false)
+              // Auto-save when selecting from browser
+              onWorkingDirectoryChange?.(path)
+              setDirSaved(true)
+              setTimeout(() => setDirSaved(false), 2000)
             }}
           />
         </div>

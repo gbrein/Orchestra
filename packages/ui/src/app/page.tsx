@@ -769,11 +769,12 @@ export default function Home() {
     setWorkflowChatOpen(true)
   }, [])
 
-  // Track current chain ID, steps, per-step usage, and per-step chat messages
+  // Track current chain ID, steps, per-step usage, per-step chat messages, and accumulated text
   const workflowChainIdRef = useRef<string>('')
   const workflowStepsRef = useRef<ReturnType<typeof buildChain>>([])
   const workflowStepUsageRef = useRef<Map<number, import('@orchestra/shared').TokenUsage>>(new Map())
   const workflowStepMsgsRef = useRef<Map<number, ChatMessage[]>>(new Map())
+  const workflowStepTextRef = useRef<Map<number, string>>(new Map())
 
   // Listen for chain socket events to update workflow log
   const chainListenersAttachedRef = useRef(false)
@@ -806,54 +807,39 @@ export default function Home() {
       setNodes((prev) => prev.map((n) =>
         n.id === data.agentId ? { ...n, data: { ...n.data, status: 'running' } } : n,
       ))
-      // Init step messages collection
+      // Init step tracking
       workflowStepMsgsRef.current.set(data.stepIndex, [])
+      workflowStepTextRef.current.set(data.stepIndex, '')
     })
 
-    // Streaming text — merge partial text into a single entry per step
+    // Streaming text — accumulate in ref, update single log entry per step
     socket.on('chain:step_text', (data: { chainId: string; stepIndex: number; agentId: string; content: string; partial: boolean }) => {
       if (data.chainId !== workflowChainIdRef.current) return
 
-      // Collect ChatMessages for step history
-      const stepMsgs = workflowStepMsgsRef.current.get(data.stepIndex) ?? []
-      const lastMsg = stepMsgs[stepMsgs.length - 1]
-      if (lastMsg && lastMsg.role === 'assistant' && lastMsg.partial) {
-        lastMsg.content += data.content
-        lastMsg.partial = data.partial
-      } else {
-        stepMsgs.push({ id: crypto.randomUUID(), role: 'assistant', content: data.content, timestamp: new Date(), partial: data.partial })
-      }
-      workflowStepMsgsRef.current.set(data.stepIndex, stepMsgs)
+      // Accumulate text in ref (source of truth)
+      const prev = workflowStepTextRef.current.get(data.stepIndex) ?? ''
+      const accumulated = prev + data.content
+      workflowStepTextRef.current.set(data.stepIndex, accumulated)
 
-      setWorkflowLog((prev) => {
-        const lastIdx = prev.findLastIndex(
+      // Update or create a single step_text entry for this stepIndex
+      setWorkflowLog((logPrev) => {
+        const idx = logPrev.findIndex(
           (e) => e.type === 'step_text' && e.stepIndex === data.stepIndex,
         )
 
-        if (lastIdx >= 0 && prev[lastIdx]!.partial) {
-          const existing = prev[lastIdx]!
-          return [
-            ...prev.slice(0, lastIdx),
-            {
-              ...existing,
-              content: existing.content + data.content,
-              partial: data.partial,
-            },
-            ...prev.slice(lastIdx + 1),
-          ]
+        const entry = {
+          id: idx >= 0 ? logPrev[idx]!.id : crypto.randomUUID(),
+          type: 'step_text' as const,
+          content: accumulated,
+          stepIndex: data.stepIndex,
+          partial: data.partial,
+          timestamp: idx >= 0 ? logPrev[idx]!.timestamp : new Date(),
         }
 
-        return [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            type: 'step_text' as const,
-            content: data.content,
-            stepIndex: data.stepIndex,
-            partial: data.partial,
-            timestamp: new Date(),
-          },
-        ]
+        if (idx >= 0) {
+          return [...logPrev.slice(0, idx), entry, ...logPrev.slice(idx + 1)]
+        }
+        return [...logPrev, entry]
       })
     })
 
@@ -950,6 +936,14 @@ export default function Home() {
       setNodes((prev) => prev.map((n) =>
         n.id === data.agentId ? { ...n, data: { ...n.data, status: 'idle' } } : n,
       ))
+      // Build definitive step history from the complete output
+      const stepMsgs = workflowStepMsgsRef.current.get(data.stepIndex) ?? []
+      // Replace or add the final assistant message with complete output
+      const finalMsgs = [
+        ...stepMsgs.filter((m) => m.role === 'tool'),
+        ...(data.output ? [{ id: crypto.randomUUID(), role: 'assistant' as const, content: data.output, timestamp: new Date() }] : []),
+      ]
+      workflowStepMsgsRef.current.set(data.stepIndex, finalMsgs)
     })
 
     socket.on('chain:complete', (data: { chainId: string; totalSteps: number }) => {
@@ -968,6 +962,7 @@ export default function Home() {
       })
       const totalUsage = totalIn > 0 ? { inputTokens: totalIn, outputTokens: totalOut, estimatedCostUsd: totalCost } : undefined
       workflowStepUsageRef.current.clear()
+      workflowStepTextRef.current.clear()
 
       setWorkflowLog((prev) => [
         ...prev,
@@ -1569,7 +1564,19 @@ export default function Home() {
               const step = steps[stepIndex]
               if (!step) return
               const msgs = workflowStepMsgsRef.current.get(stepIndex) ?? []
-              if (msgs.length === 0) return
+              if (msgs.length === 0) {
+                // Show feedback — no history available yet
+                setWorkflowLog((prev) => [
+                  ...prev,
+                  {
+                    id: crypto.randomUUID(),
+                    type: 'system' as const,
+                    content: `No conversation history available for ${step.agentName} yet.`,
+                    timestamp: new Date(),
+                  },
+                ])
+                return
+              }
               // Inject into agent chat cache and open
               injectMessagesIntoCache(step.nodeId, msgs)
               setSelectedAgent({
@@ -1603,7 +1610,7 @@ export default function Home() {
       </Sheet>
 
       {/* Git Panel */}
-      <GitPanel open={gitPanelOpen} onOpenChange={setGitPanelOpen} workspaceId={activeWorkspaceId} />
+      <GitPanel key={`git-${activeWorkspaceId}-${workspaceWorkingDir}`} open={gitPanelOpen} onOpenChange={setGitPanelOpen} workspaceId={activeWorkspaceId} />
     </div>
     </ComplexityContext.Provider>
   )

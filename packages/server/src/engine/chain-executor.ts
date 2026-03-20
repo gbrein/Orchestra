@@ -201,7 +201,11 @@ export class ChainExecutor extends EventEmitter {
       let fullOutput = ''
 
       spawner.on('text', (data: { content: string; partial: boolean }) => {
-        fullOutput += data.content
+        // The result event (partial=false) contains the COMPLETE response text.
+        // Partial events are incremental streaming chunks — only use for UI display.
+        if (!data.partial) {
+          fullOutput = data.content
+        }
         this.emit('step_text', { stepIndex, agentId: step.agentId, content: data.content, partial: data.partial })
       })
 
