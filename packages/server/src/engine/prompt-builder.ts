@@ -5,6 +5,7 @@ import { recommendModel } from '@orchestra/shared'
 import type { AgentPurpose, ModelTier } from '@orchestra/shared'
 import { buildMcpConfig } from './mcp-config-builder'
 import type { MergedMcpConfig } from './mcp-config-builder'
+import { buildWorkspaceContext } from '../resources/resource-injector'
 
 // Map ModelTier to the actual Claude model identifier used by the CLI
 const MODEL_IDS: Record<ModelTier, string> = {
@@ -36,9 +37,10 @@ export interface BuildResult {
   readonly maxBudgetUsd?: number
   readonly env: Record<string, string>
   readonly mcpConfig?: MergedMcpConfig
+  readonly addDirs?: string[]
 }
 
-export async function buildSpawnConfig(agentId: string): Promise<BuildResult> {
+export async function buildSpawnConfig(agentId: string, workspaceId?: string): Promise<BuildResult> {
   const agent = await prisma.agent.findUnique({
     where: { id: agentId },
     include: {
@@ -111,7 +113,15 @@ export async function buildSpawnConfig(agentId: string): Promise<BuildResult> {
 
   const allPolicies = [...globalPolicies, ...agent.policies]
 
-  let permissionMode = 'dontAsk'
+  // Map AgentMode to CLI permission mode strings
+  const AGENT_MODE_TO_PERMISSION: Record<string, string> = {
+    plan: 'plan',
+    default: 'default',
+    edit: 'acceptEdits',
+  }
+
+  // Start with the agent's own permissionMode setting
+  let permissionMode = AGENT_MODE_TO_PERMISSION[agent.permissionMode] ?? 'default'
   let maxBudgetUsd: number | undefined
 
   for (const policy of allPolicies) {
@@ -124,7 +134,7 @@ export async function buildSpawnConfig(agentId: string): Promise<BuildResult> {
       // Agent-level policy overrides global
       if (policy.level === 'agent' || policy.agentId === agentId) {
         permissionMode = rules.permissionMode
-      } else if (permissionMode === 'dontAsk') {
+      } else if (permissionMode === 'default') {
         permissionMode = rules.permissionMode
       }
     }
@@ -163,15 +173,52 @@ export async function buildSpawnConfig(agentId: string): Promise<BuildResult> {
   // If no MCP servers were found, omit the field entirely to keep SpawnOptions clean
   const hasMcpServers = Object.keys(mcpConfig.mcpServers).length > 0
 
+  // ------------------------------------------------------------------
+  // 8. Workspace context — inject resources if a workspaceId is provided
+  // ------------------------------------------------------------------
+  let addDirs: string[] | undefined
+  let mergedAppendPrompt: string | undefined = appendSystemPrompt
+
+  if (workspaceId) {
+    try {
+      const wsContext = await buildWorkspaceContext(workspaceId)
+
+      if (wsContext.addDirs.length > 0) {
+        addDirs = wsContext.addDirs
+      }
+
+      if (wsContext.appendPromptSections.length > 0) {
+        const wsSection = wsContext.appendPromptSections.join('\n\n')
+        mergedAppendPrompt = mergedAppendPrompt
+          ? `${mergedAppendPrompt}\n\n${wsSection}`
+          : wsSection
+      }
+
+      // Merge workspace env vars (agent env takes precedence)
+      for (const [k, v] of Object.entries(wsContext.env)) {
+        if (!(k in env)) {
+          env[k] = v
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(
+        `[prompt-builder] Failed to build workspace context for ${workspaceId}: ${message}`,
+      )
+      // Non-fatal — continue without workspace context
+    }
+  }
+
   return {
     systemPrompt,
-    appendSystemPrompt,
+    appendSystemPrompt: mergedAppendPrompt,
     allowedTools,
     model: modelId,
     permissionMode,
     maxBudgetUsd,
     env,
     ...(hasMcpServers ? { mcpConfig } : {}),
+    ...(addDirs && addDirs.length > 0 ? { addDirs } : {}),
   }
 }
 

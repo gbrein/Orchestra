@@ -1,5 +1,5 @@
 import type { Server, Socket } from 'socket.io'
-import type { ClientToServerEvents, ServerToClientEvents, TokenUsage, ResolvedPolicy } from '@orchestra/shared'
+import type { ClientToServerEvents, ServerToClientEvents, TokenUsage, ResolvedPolicy, AgentMode } from '@orchestra/shared'
 import { prisma } from '../lib/prisma'
 import { ProcessManager } from '../engine/process-manager'
 import { buildSpawnConfig } from '../engine/prompt-builder'
@@ -12,6 +12,7 @@ import type { AgentRecord } from '../discussion/moderator'
 import type { ParticipantRole, DiscussionFormat } from '@orchestra/shared'
 import { LoopEngine } from '../engine/loop-engine'
 import { ChainExecutor } from '../engine/chain-executor'
+import { recordActivity } from '../services/activity'
 import type { ChainDefinition as ChainDefinitionPayload } from '@orchestra/shared'
 import type { ChainDefinition } from '../engine/chain-executor'
 
@@ -163,6 +164,13 @@ export function registerSocketHandlers(
 
       io.emit('agent:done', { agentId, sessionId, usage: tokenUsage })
 
+      void recordActivity({
+        agentId,
+        type: 'agent_completed',
+        title: 'Agent completed',
+        metadata: { sessionId, usage: tokenUsage },
+      })
+
       agentSessionMap.delete(agentId)
       agentPolicyMap.delete(agentId)
       agentApprovalMap.delete(agentId)
@@ -182,6 +190,14 @@ export function registerSocketHandlers(
 
     onError(agentId, sessionId, err) {
       const classified = classifyError(err, agentId, sessionId)
+
+      void recordActivity({
+        agentId,
+        type: 'agent_error',
+        title: 'Agent error',
+        detail: classified.userMessage,
+        metadata: { sessionId, errorType: classified.type },
+      })
 
       io.emit('agent:error', {
         agentId,
@@ -254,6 +270,10 @@ export function registerSocketHandlers(
       handleLoopApprove(socket, data)
     })
 
+    socket.on('agent:set_mode', (data: { agentId: string; mode: AgentMode }) => {
+      void handleAgentSetMode(socket, io, processManager, approvalManager, data)
+    })
+
     socket.on('chain:execute', (data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string }) => {
       void handleChainExecute(socket, io, data)
     })
@@ -273,13 +293,13 @@ async function handleAgentStart(
   io: Server<ClientToServerEvents, ServerToClientEvents>,
   processManager: ProcessManager,
   approvalManager: ApprovalManager,
-  data: { agentId: string; message: string },
+  data: { agentId: string; message: string; workspaceId?: string },
 ): Promise<void> {
-  const { agentId, message } = data
+  const { agentId, message, workspaceId } = data
 
   try {
     // Build the spawn configuration from the DB
-    const config = await buildSpawnConfig(agentId)
+    const config = await buildSpawnConfig(agentId, workspaceId)
 
     // Resolve effective policy for this agent (no session yet — session policies
     // are applied after the Session record is created and passed in future calls)
@@ -302,6 +322,14 @@ async function handleAgentStart(
 
     io.emit('agent:status', { agentId, status: 'running' })
 
+    void recordActivity({
+      agentId,
+      workspaceId,
+      type: 'agent_started',
+      title: 'Agent started',
+      metadata: { sessionId, model: config.model },
+    })
+
     // Persist the user message
     await saveMessage(sessionId, 'user', message, null, null)
 
@@ -319,6 +347,7 @@ async function handleAgentStart(
       // Policy overrides config: use the minimum budget
       maxBudgetUsd: minDefinedBudget(config.maxBudgetUsd, resolvedPolicy.maxBudgetUsd),
       env: config.env,
+      ...(config.addDirs && config.addDirs.length > 0 ? { addDirs: config.addDirs } : {}),
     })
   } catch (err) {
     const sessionId = agentSessionMap.get(agentId) ?? ''
@@ -405,6 +434,71 @@ function handleAgentMessage(
       sessionId,
       error: classified.userMessage,
       type: classified.type,
+    })
+  }
+}
+
+async function handleAgentSetMode(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents>,
+  io: Server<ClientToServerEvents, ServerToClientEvents>,
+  processManager: ProcessManager,
+  approvalManager: ApprovalManager,
+  data: { agentId: string; mode: AgentMode },
+): Promise<void> {
+  const { agentId, mode } = data
+
+  const validModes = new Set<AgentMode>(['plan', 'default', 'edit'])
+  if (!validModes.has(mode)) {
+    socket.emit('agent:error', {
+      agentId,
+      sessionId: '',
+      error: `Invalid mode: ${mode}`,
+      type: 'PROCESS_ERROR',
+    })
+    return
+  }
+
+  try {
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: { permissionMode: mode },
+    })
+
+    io.emit('agent:mode_changed', { agentId, mode })
+
+    // If the agent is currently running, stop and re-start with the new mode
+    const sessionId = agentSessionMap.get(agentId)
+    if (sessionId) {
+      // Cancel any pending approval
+      const approvalId = agentApprovalMap.get(agentId)
+      if (approvalId) {
+        approvalManager.reject(approvalId)
+        agentApprovalMap.delete(agentId)
+      }
+
+      processManager.stopAgent(agentId)
+      agentSessionMap.delete(agentId)
+      agentPolicyMap.delete(agentId)
+
+      io.emit('agent:status', { agentId, status: 'idle' })
+
+      void Promise.all([
+        prisma.agent.update({
+          where: { id: agentId },
+          data: { status: 'idle' },
+        }),
+        prisma.session.update({
+          where: { id: sessionId },
+          data: { endedAt: new Date() },
+        }),
+      ]).catch(() => { /* best-effort */ })
+    }
+  } catch (err) {
+    socket.emit('agent:error', {
+      agentId,
+      sessionId: '',
+      error: err instanceof Error ? err.message : 'Failed to update mode',
+      type: 'PROCESS_ERROR',
     })
   }
 }

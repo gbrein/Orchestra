@@ -14,6 +14,7 @@ export interface ShortcutCallbacks {
   onToggleMarketplace: () => void
   onToggleShortcuts: () => void
   onEscape: () => void
+  onQuickRun?: () => void
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -50,6 +51,7 @@ export function useKeyboardShortcuts(callbacks: ShortcutCallbacks): void {
       onDelete,
       onSelectAll,
       onCommandPalette,
+      onQuickRun,
       onCreateAgent,
       onToggleMarketplace,
       onToggleShortcuts,
@@ -86,6 +88,14 @@ export function useKeyboardShortcuts(callbacks: ShortcutCallbacks): void {
           case 'k':
             event.preventDefault()
             onCommandPalette()
+            return
+
+          case 'r':
+          case 'R':
+            if (shift && onQuickRun) {
+              event.preventDefault()
+              onQuickRun()
+            }
             return
 
           default:
@@ -151,5 +161,6 @@ export function useKeyboardShortcuts(callbacks: ShortcutCallbacks): void {
     callbacks.onToggleMarketplace,
     callbacks.onToggleShortcuts,
     callbacks.onEscape,
+    callbacks.onQuickRun,
   ])
 }

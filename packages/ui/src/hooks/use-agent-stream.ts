@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { TokenUsage } from '@orchestra/shared'
+import type { TokenUsage, AgentMode } from '@orchestra/shared'
 import { getSocket } from '@/lib/socket'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -31,9 +31,11 @@ export interface UseAgentStreamReturn {
   isStreaming: boolean
   tokenUsage: TokenUsage | null
   error: AgentChatError | null
+  mode: AgentMode
   sendMessage: (message: string) => void
   stopAgent: () => void
   clearMessages: () => void
+  setMode: (mode: AgentMode) => void
 }
 
 // ─── Error classification ──────────────────────────────────────────────────
@@ -63,22 +65,31 @@ function classifyError(type: string, rawMessage: string): AgentChatError {
 
 // ─── Hook ──────────────────────────────────────────────────────────────────
 
-export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
+export function useAgentStream(
+  agentId: string | null,
+  workspaceId?: string | null,
+): UseAgentStreamReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isStreaming, setIsStreaming] = useState<boolean>(false)
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null)
   const [error, setError] = useState<AgentChatError | null>(null)
+  const [mode, setModeState] = useState<AgentMode>('default')
 
   const streamingMessageIdRef = useRef<string | null>(null)
   const listenersAttachedRef = useRef(false)
   const agentIdRef = useRef(agentId)
+  const workspaceIdRef = useRef(workspaceId)
 
-  // Keep agentId ref in sync
+  // Keep refs in sync
   useEffect(() => {
     agentIdRef.current = agentId
     // Reset listeners when agent changes so they reattach for the new agent
     listenersAttachedRef.current = false
   }, [agentId])
+
+  useEffect(() => {
+    workspaceIdRef.current = workspaceId
+  }, [workspaceId])
 
   // Attach socket listeners — called once when first message is sent
   const ensureListeners = useCallback(() => {
@@ -188,6 +199,11 @@ export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
         return prev
       })
     })
+
+    socket.on('agent:mode_changed', (data) => {
+      if (data.agentId !== agentIdRef.current) return
+      setModeState(data.mode)
+    })
   }, [])
 
   const sendMessage = useCallback(
@@ -230,7 +246,11 @@ export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
         sock.once('connect', () => {
           clearTimeout(connectTimeout)
           setIsStreaming(true)
-          sock.emit('agent:start', { agentId, message: trimmed })
+          sock.emit('agent:start', {
+            agentId,
+            message: trimmed,
+            workspaceId: workspaceIdRef.current ?? undefined,
+          })
         })
         return
       }
@@ -239,7 +259,11 @@ export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
         sock.emit('agent:message', { agentId, message: trimmed })
       } else {
         setIsStreaming(true)
-        sock.emit('agent:start', { agentId, message: trimmed })
+        sock.emit('agent:start', {
+          agentId,
+          message: trimmed,
+          workspaceId: workspaceIdRef.current ?? undefined,
+        })
       }
     },
     [agentId, isStreaming, ensureListeners],
@@ -267,5 +291,17 @@ export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
     streamingMessageIdRef.current = null
   }, [])
 
-  return { messages, isStreaming, tokenUsage, error, sendMessage, stopAgent, clearMessages }
+  const setMode = useCallback(
+    (newMode: AgentMode) => {
+      if (!agentId) return
+      const sock = getSocket()
+      ensureListeners()
+      if (sock.connected) {
+        sock.emit('agent:set_mode', { agentId, mode: newMode })
+      }
+    },
+    [agentId, ensureListeners],
+  )
+
+  return { messages, isStreaming, tokenUsage, error, mode, sendMessage, stopAgent, clearMessages, setMode }
 }

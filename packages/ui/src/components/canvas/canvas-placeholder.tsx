@@ -1,6 +1,6 @@
 'use client'
 
-import { Bot, MessageSquare, Layout, Sparkles } from 'lucide-react'
+import { Bot, MessageSquare, Layout, Sparkles, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
@@ -10,6 +10,8 @@ export interface CanvasPlaceholderProps {
   readonly onUseTemplate?: () => void
   readonly onExploreSkills?: () => void
   readonly onDescribe?: (description: string) => void
+  readonly onGoToWorkspace?: () => void
+  readonly hasExistingCanvas?: boolean
 }
 
 interface QuickAction {
@@ -52,6 +54,8 @@ export function CanvasPlaceholder({
   onUseTemplate,
   onExploreSkills,
   onDescribe,
+  onGoToWorkspace,
+  hasExistingCanvas,
 }: CanvasPlaceholderProps) {
   const callbacks: Record<string, (() => void) | undefined> = {
     onCreateAssistant,
@@ -117,6 +121,17 @@ export function CanvasPlaceholder({
             <Button type="submit" size="sm">Go</Button>
           </form>
         </div>
+
+        {hasExistingCanvas && onGoToWorkspace && (
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={onGoToWorkspace}
+          >
+            Continue to your workspace
+            <ArrowRight className="h-4 w-4" />
+          </Button>
+        )}
       </div>
     </div>
   )

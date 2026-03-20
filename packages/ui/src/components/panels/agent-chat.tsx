@@ -18,15 +18,19 @@ import {
   Send,
   Trash2,
   Wrench,
-  X,
   Clock,
   Pencil,
+  Paperclip,
+  FolderOpen,
+  FileText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { useAgentStream, type ChatMessage, type AgentChatError } from '@/hooks/use-agent-stream'
+import { useResources } from '@/hooks/use-resources'
+import { ModeToggle } from '@/components/panels/mode-toggle'
 import type { AgentStatus, TokenUsage } from '@orchestra/shared'
 import { MODEL_TIERS } from '@orchestra/shared'
 
@@ -39,8 +43,10 @@ export interface AgentChatProps {
   readonly agentPurpose?: string
   readonly agentStatus: AgentStatus
   readonly agentModel?: string
+  readonly workspaceId?: string | null
   readonly onClose?: () => void
   readonly onEdit?: () => void
+  readonly onManageResources?: () => void
 }
 
 // ─── Status badge ──────────────────────────────────────────────────────────
@@ -300,15 +306,23 @@ function MessageList({
 
 // ─── Input area ────────────────────────────────────────────────────────────
 
+interface AttachableFile {
+  readonly id: string
+  readonly name: string
+}
+
 interface InputAreaProps {
   readonly isStreaming: boolean
+  readonly attachableFiles: AttachableFile[]
   readonly onSend: (message: string) => void
   readonly onStop: () => void
 }
 
-function InputArea({ isStreaming, onSend, onStop }: InputAreaProps) {
+function InputArea({ isStreaming, attachableFiles, onSend, onStop }: InputAreaProps) {
   const [value, setValue] = useState('')
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const attachMenuRef = useRef<HTMLDivElement>(null)
 
   const canSend = value.trim().length > 0 && !isStreaming
 
@@ -324,11 +338,76 @@ function InputArea({ isStreaming, onSend, onStop }: InputAreaProps) {
       e.preventDefault()
       handleSend()
     }
+    if (e.key === 'Escape') {
+      setAttachMenuOpen(false)
+    }
+  }
+
+  function handleAttachFile(fileName: string) {
+    setValue((prev) => {
+      const mention = `[file: ${fileName}]`
+      return prev ? `${prev} ${mention}` : mention
+    })
+    setAttachMenuOpen(false)
+    textareaRef.current?.focus()
   }
 
   return (
     <div className="border-t border-border px-4 py-3">
+      {/* Attach file menu (shows above input when open) */}
+      {attachMenuOpen && (
+        <div
+          ref={attachMenuRef}
+          className="mb-2 rounded-md border border-border bg-card shadow-md"
+          role="listbox"
+          aria-label="Workspace files"
+        >
+          <p className="border-b border-border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Workspace Files
+          </p>
+          {attachableFiles.length === 0 ? (
+            <p className="px-3 py-2.5 text-xs text-muted-foreground">
+              No files in workspace yet.
+            </p>
+          ) : (
+            <ul className="max-h-40 overflow-y-auto py-1">
+              {attachableFiles.map((f) => (
+                <li key={f.id}>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-muted transition-colors"
+                    role="option"
+                    aria-selected={false}
+                    onClick={() => handleAttachFile(f.name)}
+                  >
+                    <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                    <span className="truncate">{f.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       <div className="flex items-end gap-2">
+        {/* Paperclip attachment button */}
+        <Button
+          size="sm"
+          variant="ghost"
+          className={cn(
+            'h-8 w-8 shrink-0 self-end p-0',
+            attachMenuOpen && 'bg-muted text-foreground',
+          )}
+          aria-label="Attach file from workspace"
+          aria-expanded={attachMenuOpen}
+          title="Attach workspace file"
+          disabled={isStreaming}
+          onClick={() => setAttachMenuOpen((prev) => !prev)}
+        >
+          <Paperclip className="h-3.5 w-3.5" aria-hidden />
+        </Button>
+
         <Textarea
           ref={textareaRef}
           value={value}
@@ -379,11 +458,15 @@ export function AgentChat({
   agentPurpose,
   agentStatus,
   agentModel,
+  workspaceId,
   onClose,
   onEdit,
+  onManageResources,
 }: AgentChatProps) {
-  const { messages, isStreaming, tokenUsage, error, sendMessage, stopAgent, clearMessages } =
-    useAgentStream(agentId)
+  const { messages, isStreaming, tokenUsage, error, mode, sendMessage, stopAgent, clearMessages, setMode } =
+    useAgentStream(agentId, workspaceId)
+
+  const { resources } = useResources(workspaceId ?? null)
 
   const [lastUserMessage, setLastUserMessage] = useState<string | null>(null)
 
@@ -400,6 +483,19 @@ export function AgentChat({
       sendMessage(lastUserMessage)
     }
   }, [lastUserMessage, sendMessage])
+
+  // Resource summary for header
+  const files = resources.filter((r) => r.kind === 'file')
+  const attachableFiles = files.map((f) => ({ id: f.id, name: f.name }))
+
+  const resourceSummary = (() => {
+    const totalResources = resources.length
+    if (totalResources === 0) return null
+    const fileNames = files.slice(0, 2).map((f) => f.name)
+    const remaining = totalResources - fileNames.length
+    const namesText = fileNames.join(', ')
+    return remaining > 0 ? `${namesText} +${remaining} more` : namesText
+  })()
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -420,10 +516,35 @@ export function AgentChat({
                 {agentDescription || `Purpose: ${agentPurpose}`}
               </p>
             )}
+            {/* Resource summary line */}
+            {workspaceId && (
+              <div className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                <FolderOpen className="h-3 w-3 shrink-0 text-cyan-400" aria-hidden />
+                <span>
+                  Resources:{' '}
+                  {resourceSummary ?? 'none'}
+                </span>
+                {onManageResources && (
+                  <button
+                    type="button"
+                    className="ml-1 rounded px-1 py-0.5 text-[10px] font-medium text-cyan-400 hover:bg-cyan-400/10 transition-colors"
+                    onClick={onManageResources}
+                    aria-label="Manage workspace resources"
+                  >
+                    Manage
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
+        {/* Mode toggle */}
+        <div className="mt-2 border-t border-border pt-2">
+          <ModeToggle mode={mode} onChange={setMode} disabled={isStreaming} />
+        </div>
+
         {/* Action bar */}
-        <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
+        <div className="mt-2 flex items-center justify-between">
           <div className="flex items-center gap-1">
             {onEdit && (
               <Button
@@ -474,7 +595,12 @@ export function AgentChat({
       )}
 
       {/* Input */}
-      <InputArea isStreaming={isStreaming} onSend={handleSend} onStop={stopAgent} />
+      <InputArea
+        isStreaming={isStreaming}
+        attachableFiles={attachableFiles}
+        onSend={handleSend}
+        onStop={stopAgent}
+      />
     </div>
   )
 }

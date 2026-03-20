@@ -25,6 +25,8 @@ import { AgentNode } from './nodes/agent-node'
 import { SkillNode } from './nodes/skill-node'
 import { PolicyNode } from './nodes/policy-node'
 import { McpNode, type McpNodeData } from './nodes/mcp-node'
+import { ResourceNode, type ResourceNodeData } from './nodes/resource-node'
+import { StickyNoteNode } from './nodes/sticky-note-node'
 import { OrchestraEdge, type OrchestraEdgeData } from './edges/orchestra-edge'
 import {
   isValidConnection,
@@ -42,6 +44,8 @@ const NODE_TYPES: NodeTypes = {
   skill: SkillNode,
   policy: PolicyNode,
   mcp: McpNode,
+  resource: ResourceNode,
+  note: StickyNoteNode,
 }
 
 const EDGE_TYPES: EdgeTypes = {
@@ -265,6 +269,15 @@ function OrchestraCanvasInner({
           description: parsedData['description'] as string | undefined,
         }
         newNode = { id: crypto.randomUUID(), type: 'mcp', position, data: mcpData }
+      } else if (dragType === DRAG_TYPES.RESOURCE) {
+        const resourceData: ResourceNodeData = {
+          label: (parsedData['label'] as string | undefined) ?? 'Resources',
+          fileCount: (parsedData['fileCount'] as number | undefined) ?? 0,
+          linkCount: (parsedData['linkCount'] as number | undefined) ?? 0,
+          noteCount: (parsedData['noteCount'] as number | undefined) ?? 0,
+          variableCount: (parsedData['variableCount'] as number | undefined) ?? 0,
+        }
+        newNode = { id: crypto.randomUUID(), type: 'resource', position, data: resourceData }
       } else {
         return
       }
@@ -337,6 +350,7 @@ function OrchestraCanvasInner({
             if (node.type === 'skill') return 'hsl(var(--secondary-foreground))'
             if (node.type === 'policy') return 'hsl(217 91% 60%)'
             if (node.type === 'mcp') return 'hsl(271 91% 65%)'
+            if (node.type === 'resource') return 'hsl(189 94% 43%)'
             return 'hsl(var(--muted-foreground))'
           }}
           maskColor="hsl(var(--background) / 0.7)"

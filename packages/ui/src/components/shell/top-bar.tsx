@@ -1,12 +1,13 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { Music, Bell, Settings } from 'lucide-react'
+import { Music, Bell } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { NotificationPanel } from '@/components/shell/notification-panel'
 import { WorkspaceSwitcher, type Workspace } from '@/components/panels/workspace-switcher'
 import { cn } from '@/lib/utils'
+import { UserAvatar } from '@/components/shell/user-avatar'
 import type { OrchestraNotification } from '@/hooks/use-notifications'
 import { useComplexity } from '@/hooks/use-complexity'
 
@@ -21,21 +22,17 @@ export interface TopBarProps {
   readonly onAcknowledgeAll?: () => void
   readonly onRemoveNotification?: (id: string) => void
   readonly onReviewApproval?: (notification: OrchestraNotification) => void
-  // New callbacks
-  readonly onWorkspaceChange?: (id: string) => void
+  readonly workspaces?: readonly Workspace[]
+  readonly activeWorkspaceId?: string
+  readonly onHomeClick?: () => void
+  readonly onWorkspaceClick?: () => void
+  readonly onSelectWorkspace?: (id: string) => void
+  readonly onCreateWorkspace?: (name: string) => void
   readonly onDiscussionsClick?: () => void
   readonly onHistoryClick?: () => void
   readonly onSettingsClick?: () => void
   readonly activeTab?: TopBarTab
 }
-
-// ─── Default workspaces state ───────────────────────────────────────────────
-// Kept module-level so the state survives re-renders of TopBar without being
-// lifted further. For a real app, this would live in a context or the page.
-
-const DEFAULT_WORKSPACES: Workspace[] = [
-  { id: 'default', name: 'My Workspace' },
-]
 
 // ─── TopBar ────────────────────────────────────────────────────────────────
 
@@ -46,7 +43,12 @@ export function TopBar({
   onAcknowledgeAll,
   onRemoveNotification,
   onReviewApproval,
-  onWorkspaceChange,
+  workspaces = [],
+  activeWorkspaceId = '',
+  onHomeClick,
+  onWorkspaceClick,
+  onSelectWorkspace,
+  onCreateWorkspace,
   onDiscussionsClick,
   onHistoryClick,
   onSettingsClick,
@@ -56,28 +58,12 @@ export function TopBar({
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false)
   const bellButtonRef = useRef<HTMLButtonElement>(null)
 
-  const [workspaces, setWorkspaces] = useState<Workspace[]>(DEFAULT_WORKSPACES)
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState('default')
-
   function toggleNotificationPanel() {
     setNotificationPanelOpen((prev) => !prev)
   }
 
   function closeNotificationPanel() {
     setNotificationPanelOpen(false)
-  }
-
-  function handleSelectWorkspace(id: string) {
-    setActiveWorkspaceId(id)
-    onWorkspaceChange?.(id)
-  }
-
-  function handleCreateWorkspace(name: string) {
-    const id = crypto.randomUUID()
-    const next: Workspace = { id, name }
-    setWorkspaces((prev) => [...prev, next])
-    setActiveWorkspaceId(id)
-    onWorkspaceChange?.(id)
   }
 
   return (
@@ -89,8 +75,8 @@ export function TopBar({
         <WorkspaceSwitcher
           workspaces={workspaces}
           activeId={activeWorkspaceId}
-          onSelect={handleSelectWorkspace}
-          onCreateWorkspace={handleCreateWorkspace}
+          onSelect={onSelectWorkspace ?? (() => {})}
+          onCreateWorkspace={onCreateWorkspace ?? (() => {})}
         />
       </div>
 
@@ -101,12 +87,25 @@ export function TopBar({
           size="sm"
           className={cn(
             'h-7 text-xs',
+            activeTab === 'workspace' && !onHomeClick
+              ? 'font-medium text-foreground'
+              : 'text-muted-foreground',
+          )}
+          onClick={onHomeClick}
+        >
+          Home
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn(
+            'h-7 text-xs',
             activeTab === 'workspace'
               ? 'font-medium text-foreground'
               : 'text-muted-foreground',
           )}
           aria-current={activeTab === 'workspace' ? 'page' : undefined}
-          onClick={onDiscussionsClick ? undefined : undefined}
+          onClick={onWorkspaceClick}
         >
           Workspace
         </Button>
@@ -186,15 +185,7 @@ export function TopBar({
           />
         </div>
 
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 w-8 p-0"
-          aria-label="Settings"
-          onClick={onSettingsClick}
-        >
-          <Settings className="h-4 w-4" />
-        </Button>
+        <UserAvatar onSettingsClick={onSettingsClick} />
       </div>
     </header>
   )
