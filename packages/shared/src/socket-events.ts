@@ -51,6 +51,10 @@ export interface ServerToClientEvents {
   'discussion:turn': (data: { tableId: string; agentName: string; role: string; content: string }) => void
   'discussion:moderator': (data: { tableId: string; decision: string; reasoning: string }) => void
   'discussion:concluded': (data: { tableId: string; conclusion: string }) => void
+  'chain:step_start': (data: { chainId: string; stepIndex: number; agentId: string }) => void
+  'chain:step_complete': (data: { chainId: string; stepIndex: number; agentId: string; output: string }) => void
+  'chain:complete': (data: { chainId: string; totalSteps: number }) => void
+  'chain:error': (data: { chainId: string; stepIndex: number; error: string }) => void
   'notification': (data: { id: string; level: 'info' | 'action_required' | 'critical' | 'error'; title: string; agentId?: string; actions?: string[] }) => void
   'canvas:updated': (data: { workspaceId: string }) => void
 }

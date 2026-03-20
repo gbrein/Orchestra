@@ -15,6 +15,10 @@ import { createAgentNode } from '@/lib/canvas-utils'
 import { apiPost, apiDelete } from '@/lib/api'
 import { createResourceNode } from '@/lib/canvas-utils'
 import { OrchestraCanvas, type UndoRedoControls } from '@/components/canvas/orchestra-canvas'
+import { WorkflowToolbar } from '@/components/canvas/workflow-toolbar'
+import { WorkflowChat, type WorkflowLogEntry } from '@/components/panels/workflow-chat'
+import { hasAgentChain, buildChain } from '@/lib/chain-utils'
+import { getSocket } from '@/lib/socket'
 import { ShortcutOverlay } from '@/components/shell/shortcut-overlay'
 import { AgentChat } from '@/components/panels/agent-chat'
 import { ApprovalDialog } from '@/components/panels/approval-dialog'
@@ -34,6 +38,7 @@ import { AgentDrawer } from '@/components/panels/agent-drawer'
 import { QuickRunBar } from '@/components/shell/quick-run-bar'
 import { ActivityFeed } from '@/components/panels/activity-feed'
 import { WorkspaceContextEditor } from '@/components/panels/workspace-context-editor'
+import { WorkspacePlanEditor } from '@/components/panels/workspace-plan-editor'
 import { CostDashboard } from '@/components/panels/cost-dashboard'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { apiGet } from '@/lib/api'
@@ -99,6 +104,12 @@ export default function Home() {
   const [activityOpen, setActivityOpen] = useState(false)
   const [contextEditorOpen, setContextEditorOpen] = useState(false)
   const [costDashboardOpen, setCostDashboardOpen] = useState(false)
+  const [planEditorOpen, setPlanEditorOpen] = useState(false)
+  const [workflowRunning, setWorkflowRunning] = useState(false)
+  const [workflowStep, setWorkflowStep] = useState<{ index: number; total: number; agentName: string } | null>(null)
+  const [workflowChatOpen, setWorkflowChatOpen] = useState(false)
+  const [workflowLog, setWorkflowLog] = useState<WorkflowLogEntry[]>([])
+  const [workflowMode, setWorkflowMode] = useState<import('@orchestra/shared').AgentMode>('default')
   const [createAgentOpen, setCreateAgentOpen] = useState(false)
   const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
@@ -145,7 +156,7 @@ export default function Home() {
     )
   }, [])
 
-  const { sessionTokens } = useAgentStatus(handleAgentStatusChange)
+  const { sessionTokens, activeAgentIds } = useAgentStatus(handleAgentStatusChange)
 
   const handleSettingsClose = useCallback((open: boolean) => {
     setSettingsOpen(open)
@@ -549,6 +560,8 @@ export default function Home() {
     setActivityOpen(false)
     setContextEditorOpen(false)
     setCostDashboardOpen(false)
+    setPlanEditorOpen(false)
+    setWorkflowChatOpen(false)
     setNodes((prev) =>
       prev.map((n) => ({ ...n, selected: false })),
     )
@@ -584,6 +597,178 @@ export default function Home() {
 
   const handleCostDashboardClick = useCallback(() => {
     setCostDashboardOpen(true)
+  }, [])
+
+  const handlePlanClick = useCallback(() => {
+    setPlanEditorOpen(true)
+  }, [])
+
+  const handleRunWorkflow = useCallback((message: string) => {
+    const chain = buildChain(nodes, edges)
+    if (chain.length < 2) return
+
+    const sock = getSocket()
+    if (!sock.connected) {
+      sock.connect()
+    }
+
+    const chainId = crypto.randomUUID()
+    workflowChainIdRef.current = chainId
+    workflowStepsRef.current = chain
+
+    const definition = {
+      steps: chain.map((step) => ({
+        agentId: step.nodeId,
+      })),
+      edges: chain.slice(0, -1).map((_, i) => ({
+        from: i,
+        to: i + 1,
+      })),
+    }
+
+    // Add user message and system log entry
+    setWorkflowLog((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        type: 'user',
+        content: message,
+        timestamp: new Date(),
+      },
+      {
+        id: crypto.randomUUID(),
+        type: 'system',
+        content: `Starting workflow with ${chain.length} steps (mode: ${workflowMode})`,
+        timestamp: new Date(),
+      },
+    ])
+
+    setWorkflowRunning(true)
+    setWorkflowStep({ index: 1, total: chain.length, agentName: chain[0].agentName })
+
+    sock.emit('chain:execute', {
+      chainId,
+      definition,
+      initialMessage: message,
+    })
+  }, [nodes, edges, workflowMode])
+
+  const handleStopWorkflow = useCallback(() => {
+    setWorkflowRunning(false)
+    setWorkflowStep(null)
+    setWorkflowLog((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        type: 'system',
+        content: 'Workflow stopped by user',
+        timestamp: new Date(),
+      },
+    ])
+  }, [])
+
+  const handleWorkflowSendMessage = useCallback((message: string) => {
+    setWorkflowLog((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        type: 'user',
+        content: message,
+        timestamp: new Date(),
+      },
+    ])
+  }, [])
+
+  const handleClearWorkflowLog = useCallback(() => {
+    setWorkflowLog([])
+  }, [])
+
+  const handleOpenWorkflowChat = useCallback(() => {
+    setWorkflowChatOpen(true)
+  }, [])
+
+  // Track current chain ID and steps for event listeners
+  const workflowChainIdRef = useRef<string>('')
+  const workflowStepsRef = useRef<ReturnType<typeof buildChain>>([])
+
+  // Listen for chain socket events to update workflow log
+  const chainListenersAttachedRef = useRef(false)
+  useEffect(() => {
+    if (chainListenersAttachedRef.current) return
+    chainListenersAttachedRef.current = true
+
+    const socket = getSocket()
+
+    socket.on('chain:step_start', (data: { chainId: string; stepIndex: number; agentId: string }) => {
+      if (data.chainId !== workflowChainIdRef.current) return
+      const steps = workflowStepsRef.current
+      const step = steps[data.stepIndex]
+      const agentName = step?.agentName ?? `Agent ${data.stepIndex + 1}`
+
+      setWorkflowStep({ index: data.stepIndex + 1, total: steps.length, agentName })
+      setWorkflowLog((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: 'step_start' as const,
+          content: '',
+          agentName,
+          stepIndex: data.stepIndex,
+          timestamp: new Date(),
+        },
+      ])
+    })
+
+    socket.on('chain:step_complete', (data: { chainId: string; stepIndex: number; agentId: string; output: string }) => {
+      if (data.chainId !== workflowChainIdRef.current) return
+      const steps = workflowStepsRef.current
+      const step = steps[data.stepIndex]
+      const agentName = step?.agentName ?? `Agent ${data.stepIndex + 1}`
+
+      setWorkflowLog((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: 'step_complete' as const,
+          content: data.output,
+          agentName,
+          stepIndex: data.stepIndex,
+          timestamp: new Date(),
+        },
+      ])
+    })
+
+    socket.on('chain:complete', (data: { chainId: string; totalSteps: number }) => {
+      if (data.chainId !== workflowChainIdRef.current) return
+      setWorkflowRunning(false)
+      setWorkflowStep(null)
+      setWorkflowLog((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: 'chain_complete' as const,
+          content: `Completed ${data.totalSteps} steps`,
+          timestamp: new Date(),
+        },
+      ])
+    })
+
+    socket.on('chain:error', (data: { chainId: string; stepIndex: number; error: string }) => {
+      if (data.chainId !== workflowChainIdRef.current) return
+      const steps = workflowStepsRef.current
+      const step = steps[data.stepIndex]
+      const agentName = step?.agentName ?? `Agent ${data.stepIndex + 1}`
+
+      setWorkflowLog((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: 'error' as const,
+          content: `${agentName}: ${data.error}`,
+          timestamp: new Date(),
+        },
+      ])
+    })
   }, [])
 
   useKeyboardShortcuts({
@@ -740,6 +925,7 @@ export default function Home() {
           onConnectionsClick={handleConnectionsClick}
           onResourcesClick={handleResourcesClick}
           onActivityClick={handleActivityClick}
+          onPlanClick={handlePlanClick}
         />
         <main className="relative flex-1 overflow-hidden">
           <ErrorBoundary>
@@ -747,6 +933,14 @@ export default function Home() {
               className={showCanvas ? 'h-full w-full' : 'hidden'}
               aria-hidden={!showCanvas}
             >
+              <WorkflowToolbar
+                hasChain={hasAgentChain(nodes, edges)}
+                isRunning={workflowRunning}
+                currentStep={workflowStep}
+                onRun={handleOpenWorkflowChat}
+                onStop={handleStopWorkflow}
+                onOpenChat={handleOpenWorkflowChat}
+              />
               <OrchestraCanvas
                 initialNodes={nodes}
                 initialEdges={edges}
@@ -755,6 +949,7 @@ export default function Home() {
                 onViewReady={handleViewReady}
                 onNodeDoubleClick={handleNodeDoubleClick}
                 onZoomChange={setZoomLevel}
+                activeAgentIds={activeAgentIds}
               />
             </div>
 
@@ -1099,6 +1294,44 @@ export default function Home() {
           </SheetTitle>
           <div className="overflow-y-auto" style={{ height: 'calc(100% - 48px)' }}>
             <CostDashboard />
+          </div>
+        </SheetContent>
+      </Sheet>
+      {/* Workflow Chat */}
+      <Sheet open={workflowChatOpen} onOpenChange={setWorkflowChatOpen}>
+        <SheetContent
+          side="right"
+          className="flex w-[420px] flex-col gap-0 p-0 sm:w-[480px] [&>button.absolute]:hidden"
+        >
+          <SheetTitle className="sr-only">Workflow Chat</SheetTitle>
+          <WorkflowChat
+            steps={buildChain(nodes, edges)}
+            isRunning={workflowRunning}
+            log={workflowLog}
+            mode={workflowMode}
+            onSendMessage={handleWorkflowSendMessage}
+            onRun={handleRunWorkflow}
+            onStop={handleStopWorkflow}
+            onModeChange={setWorkflowMode}
+            onClearLog={handleClearWorkflowLog}
+          />
+        </SheetContent>
+      </Sheet>
+
+      {/* Workspace Plan Editor */}
+      <Sheet open={planEditorOpen} onOpenChange={setPlanEditorOpen}>
+        <SheetContent side="right" className="w-[500px] p-0 sm:w-[500px]">
+          <SheetTitle className="border-b border-border px-4 py-3 text-sm font-semibold">
+            Workspace Plan
+          </SheetTitle>
+          <div className="overflow-y-auto" style={{ height: 'calc(100% - 48px)' }}>
+            {activeWorkspaceId ? (
+              <WorkspacePlanEditor workspaceId={activeWorkspaceId} />
+            ) : (
+              <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+                Select a workspace first
+              </div>
+            )}
           </div>
         </SheetContent>
       </Sheet>
