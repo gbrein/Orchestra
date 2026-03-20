@@ -28,6 +28,8 @@ export interface TopBarProps {
   readonly onWorkspaceClick?: () => void
   readonly onSelectWorkspace?: (id: string) => void
   readonly onCreateWorkspace?: (name: string) => void
+  readonly onRenameWorkspace?: (id: string, name: string) => void
+  readonly onDeleteWorkspace?: (id: string) => void
   readonly onDiscussionsClick?: () => void
   readonly onHistoryClick?: () => void
   readonly onSettingsClick?: () => void
@@ -49,6 +51,8 @@ export function TopBar({
   onWorkspaceClick,
   onSelectWorkspace,
   onCreateWorkspace,
+  onRenameWorkspace,
+  onDeleteWorkspace,
   onDiscussionsClick,
   onHistoryClick,
   onSettingsClick,
@@ -77,6 +81,8 @@ export function TopBar({
           activeId={activeWorkspaceId}
           onSelect={onSelectWorkspace ?? (() => {})}
           onCreateWorkspace={onCreateWorkspace ?? (() => {})}
+          onRenameWorkspace={onRenameWorkspace}
+          onDeleteWorkspace={onDeleteWorkspace}
         />
       </div>
 

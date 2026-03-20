@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Node, Edge } from '@xyflow/react'
-import { apiGet, apiPost, apiPut } from '@/lib/api'
+import { apiGet, apiPost, apiPut, apiPatch, apiDelete } from '@/lib/api'
 
 interface CanvasLayout {
   id: string
@@ -25,6 +25,8 @@ interface UseCanvasPersistenceReturn {
   saveCanvas: (nodes: Node[], edges: Edge[]) => void
   switchWorkspace: (id: string) => Promise<{ nodes: Node[]; edges: Edge[] } | null>
   createWorkspace: (name: string) => Promise<string>
+  renameWorkspace: (id: string, name: string) => Promise<void>
+  deleteWorkspace: (id: string) => Promise<void>
 }
 
 const DEBOUNCE_MS = 2000
@@ -155,6 +157,36 @@ export function useCanvasPersistence(): UseCanvasPersistenceReturn {
     }
   }, [])
 
+  // Rename a workspace
+  const renameWorkspace = useCallback(async (id: string, name: string): Promise<void> => {
+    try {
+      await apiPatch(`/api/workspaces/${id}`, { name })
+      setWorkspaces((prev) =>
+        prev.map((w) => (w.id === id ? { ...w, name } : w)),
+      )
+    } catch {
+      // silent
+    }
+  }, [])
+
+  // Delete a workspace
+  const deleteWorkspace = useCallback(async (id: string): Promise<void> => {
+    try {
+      await apiDelete(`/api/workspaces/${id}`)
+      setWorkspaces((prev) => {
+        const remaining = prev.filter((w) => w.id !== id)
+        // If we deleted the active workspace, switch to another
+        if (activeIdRef.current === id && remaining.length > 0) {
+          activeIdRef.current = remaining[0].id
+          setActiveWorkspaceId(remaining[0].id)
+        }
+        return remaining
+      })
+    } catch {
+      // silent
+    }
+  }, [])
+
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
@@ -170,5 +202,7 @@ export function useCanvasPersistence(): UseCanvasPersistenceReturn {
     saveCanvas,
     switchWorkspace,
     createWorkspace,
+    renameWorkspace,
+    deleteWorkspace,
   }
 }

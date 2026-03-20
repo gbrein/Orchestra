@@ -112,7 +112,7 @@ async function main() {
 
   // Socket.IO setup — attach to the raw HTTP server (before Fastify listen)
   const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
-    cors: { origin: UI_ORIGIN, methods: ['GET', 'POST'] },
+    cors: { origin: UI_ORIGIN, methods: ['GET', 'POST'], credentials: true },
   })
 
   // Socket.IO auth middleware — validate session cookie

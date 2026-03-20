@@ -43,6 +43,57 @@ export async function canvasRoutes(app: FastifyInstance) {
     }
   })
 
+  app.patch<{ Params: { id: string } }>('/api/workspaces/:id', async (req, reply) => {
+    try {
+      const { id } = req.params
+      const body = CreateWorkspaceSchema.parse(req.body)
+      const userId = req.user?.id
+
+      const workspace = await prisma.workspace.findUnique({ where: { id } })
+      if (!workspace) throw new NotFoundError('Workspace', id)
+      if (userId && workspace.userId && workspace.userId !== userId) {
+        return sendError(reply, new NotFoundError('Workspace', id))
+      }
+
+      const updated = await prisma.workspace.update({
+        where: { id },
+        data: { name: body.name },
+      })
+      sendSuccess(reply, updated)
+    } catch (error) {
+      sendError(reply, error)
+    }
+  })
+
+  app.delete<{ Params: { id: string } }>('/api/workspaces/:id', async (req, reply) => {
+    try {
+      const { id } = req.params
+      const userId = req.user?.id
+
+      const workspace = await prisma.workspace.findUnique({ where: { id } })
+      if (!workspace) throw new NotFoundError('Workspace', id)
+      if (userId && workspace.userId && workspace.userId !== userId) {
+        return sendError(reply, new NotFoundError('Workspace', id))
+      }
+
+      // Prevent deleting the last workspace
+      const count = await prisma.workspace.count({
+        where: userId ? { OR: [{ userId }, { userId: null }] } : undefined,
+      })
+      if (count <= 1) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Cannot delete the last workspace',
+        })
+      }
+
+      await prisma.workspace.delete({ where: { id } })
+      sendSuccess(reply, { deleted: true })
+    } catch (error) {
+      sendError(reply, error)
+    }
+  })
+
   app.get<{ Params: { id: string } }>('/api/workspaces/:id/canvas', async (req, reply) => {
     try {
       const workspace = await prisma.workspace.findUnique({

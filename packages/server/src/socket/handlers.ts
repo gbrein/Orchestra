@@ -22,6 +22,9 @@ const agentSessionMap = new Map<string, string>()
 // Tracks the resolved policy per agentId for the duration of a run
 const agentPolicyMap = new Map<string, ResolvedPolicy>()
 
+// Tracks the userId per agentId so callbacks can record activity with the correct user
+const agentUserMap = new Map<string, string>()
+
 // Tracks the pending approval id per agentId (at most one at a time)
 const agentApprovalMap = new Map<string, string>()
 
@@ -77,6 +80,7 @@ export function registerSocketHandlers(
           processManager.stopAgent(agentId)
           agentSessionMap.delete(agentId)
           agentPolicyMap.delete(agentId)
+          agentUserMap.delete(agentId)
 
           void Promise.all([
             prisma.agent.update({ where: { id: agentId }, data: { status: 'error' } }),
@@ -165,6 +169,7 @@ export function registerSocketHandlers(
       io.emit('agent:done', { agentId, sessionId, usage: tokenUsage })
 
       void recordActivity({
+        userId: agentUserMap.get(agentId),
         agentId,
         type: 'agent_completed',
         title: 'Agent completed',
@@ -174,6 +179,7 @@ export function registerSocketHandlers(
       agentSessionMap.delete(agentId)
       agentPolicyMap.delete(agentId)
       agentApprovalMap.delete(agentId)
+      agentUserMap.delete(agentId)
 
       // Update agent status and close the session
       void Promise.all([
@@ -192,6 +198,7 @@ export function registerSocketHandlers(
       const classified = classifyError(err, agentId, sessionId)
 
       void recordActivity({
+        userId: agentUserMap.get(agentId),
         agentId,
         type: 'agent_error',
         title: 'Agent error',
@@ -211,6 +218,7 @@ export function registerSocketHandlers(
       agentSessionMap.delete(agentId)
       agentPolicyMap.delete(agentId)
       agentApprovalMap.delete(agentId)
+      agentUserMap.delete(agentId)
 
       void Promise.all([
         prisma.agent.update({
@@ -322,7 +330,13 @@ async function handleAgentStart(
 
     io.emit('agent:status', { agentId, status: 'running' })
 
+    const userId = (socket.data as Record<string, unknown>)?.user
+      ? ((socket.data as Record<string, unknown>).user as { id: string }).id
+      : undefined
+    agentUserMap.set(agentId, userId ?? '')
+
     void recordActivity({
+      userId,
       agentId,
       workspaceId,
       type: 'agent_started',
@@ -364,6 +378,7 @@ async function handleAgentStart(
 
     agentSessionMap.delete(agentId)
     agentPolicyMap.delete(agentId)
+    agentUserMap.delete(agentId)
 
     // Best-effort status update
     void prisma.agent.update({
@@ -393,6 +408,7 @@ function handleAgentStop(
   processManager.stopAgent(agentId)
   agentSessionMap.delete(agentId)
   agentPolicyMap.delete(agentId)
+  agentUserMap.delete(agentId)
 
   io.emit('agent:status', { agentId, status: 'idle' })
 
@@ -479,6 +495,7 @@ async function handleAgentSetMode(
       processManager.stopAgent(agentId)
       agentSessionMap.delete(agentId)
       agentPolicyMap.delete(agentId)
+      agentUserMap.delete(agentId)
 
       io.emit('agent:status', { agentId, status: 'idle' })
 

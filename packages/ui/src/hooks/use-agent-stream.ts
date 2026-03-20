@@ -63,28 +63,83 @@ function classifyError(type: string, rawMessage: string): AgentChatError {
   }
 }
 
+// ─── Session-level message cache ──────────────────────────────────────────
+// Survives component unmount/remount so closing and reopening the chat
+// panel preserves the conversation for the duration of the browser session.
+
+interface CachedSession {
+  messages: ChatMessage[]
+  tokenUsage: TokenUsage | null
+  updatedAt: number
+}
+
+const messageCache = new Map<string, CachedSession>()
+
+// Evict entries older than 30 minutes to avoid unbounded growth
+const CACHE_TTL_MS = 30 * 60 * 1000
+
+function pruneCache() {
+  const now = Date.now()
+  for (const [key, entry] of messageCache) {
+    if (now - entry.updatedAt > CACHE_TTL_MS) {
+      messageCache.delete(key)
+    }
+  }
+}
+
 // ─── Hook ──────────────────────────────────────────────────────────────────
 
 export function useAgentStream(
   agentId: string | null,
   workspaceId?: string | null,
 ): UseAgentStreamReturn {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [messages, setMessagesRaw] = useState<ChatMessage[]>(
+    () => (agentId ? messageCache.get(agentId)?.messages : undefined) ?? [],
+  )
   const [isStreaming, setIsStreaming] = useState<boolean>(false)
-  const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null)
+  const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(
+    () => (agentId ? messageCache.get(agentId)?.tokenUsage : undefined) ?? null,
+  )
   const [error, setError] = useState<AgentChatError | null>(null)
   const [mode, setModeState] = useState<AgentMode>('default')
+
+  // Wrapper that syncs messages to the module-level cache
+  const setMessages: typeof setMessagesRaw = useCallback(
+    (action) => {
+      setMessagesRaw((prev) => {
+        const next = typeof action === 'function' ? action(prev) : action
+        if (agentIdRef.current) {
+          messageCache.set(agentIdRef.current, {
+            messages: next,
+            tokenUsage: null, // updated separately
+            updatedAt: Date.now(),
+          })
+        }
+        return next
+      })
+    },
+    [],
+  )
 
   const streamingMessageIdRef = useRef<string | null>(null)
   const listenersAttachedRef = useRef(false)
   const agentIdRef = useRef(agentId)
   const workspaceIdRef = useRef(workspaceId)
 
-  // Keep refs in sync
+  // Keep refs in sync and restore cache when switching agents
   useEffect(() => {
     agentIdRef.current = agentId
     // Reset listeners when agent changes so they reattach for the new agent
     listenersAttachedRef.current = false
+
+    // Restore cached messages for the new agent
+    const cached = agentId ? messageCache.get(agentId) : undefined
+    setMessagesRaw(cached?.messages ?? [])
+    setTokenUsage(cached?.tokenUsage ?? null)
+    setError(null)
+    setIsStreaming(false)
+
+    pruneCache()
   }, [agentId])
 
   useEffect(() => {
@@ -190,6 +245,13 @@ export function useAgentStream(
       setIsStreaming(false)
       streamingMessageIdRef.current = null
       setTokenUsage(data.usage)
+      // Sync token usage to cache
+      if (agentIdRef.current) {
+        const cached = messageCache.get(agentIdRef.current)
+        if (cached) {
+          messageCache.set(agentIdRef.current, { ...cached, tokenUsage: data.usage, updatedAt: Date.now() })
+        }
+      }
       // Finalize any dangling partial message
       setMessages((prev) => {
         const last = prev[prev.length - 1]
@@ -284,11 +346,14 @@ export function useAgentStream(
   }, [agentId])
 
   const clearMessages = useCallback(() => {
-    setMessages([])
+    setMessagesRaw([])
     setTokenUsage(null)
     setError(null)
     setIsStreaming(false)
     streamingMessageIdRef.current = null
+    if (agentIdRef.current) {
+      messageCache.delete(agentIdRef.current)
+    }
   }, [])
 
   const setMode = useCallback(
