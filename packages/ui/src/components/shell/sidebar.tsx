@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Bot, Puzzle, Shield, MessageSquare, Plug, PanelLeftClose, PanelLeft, Plus, Home, FolderOpen } from 'lucide-react'
+import { Bot, Puzzle, Shield, MessageSquare, Plug, PanelLeftClose, PanelLeft, Plus, Home, FolderOpen, Activity } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -11,12 +11,13 @@ import {
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useComplexity } from '@/hooks/use-complexity'
+import { FavoritesSection } from '@/components/shell/favorites-section'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export type NodeType = 'agent' | 'skill' | 'safety' | 'discussion' | 'connection' | 'resource'
+export type NodeType = 'agent' | 'skill' | 'safety' | 'discussion' | 'connection' | 'resource' | 'activity'
 
 interface SidebarItem {
   readonly icon: React.ElementType
@@ -26,7 +27,16 @@ interface SidebarItem {
   readonly minTier: 'simple' | 'standard' | 'full'
 }
 
+interface FavoriteAgent {
+  readonly id: string
+  readonly name: string
+  readonly avatar?: string | null
+  readonly status: string
+}
+
 export interface SidebarProps {
+  readonly favorites?: readonly FavoriteAgent[]
+  readonly onSelectFavorite?: (agentId: string) => void
   readonly onHomeClick?: () => void
   readonly onCreateAgent?: () => void
   readonly onAssistantsClick?: () => void
@@ -35,6 +45,7 @@ export interface SidebarProps {
   readonly onDiscussionsClick?: () => void
   readonly onConnectionsClick?: () => void
   readonly onResourcesClick?: () => void
+  readonly onActivityClick?: () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -50,13 +61,14 @@ const ITEMS: readonly SidebarItem[] = [
   { icon: Shield, label: 'Safety Rules', nodeType: 'safety', minTier: 'standard' },
   { icon: MessageSquare, label: 'Discussions', nodeType: 'discussion', minTier: 'standard' },
   { icon: Plug, label: 'Connections', nodeType: 'connection', minTier: 'full' },
+  { icon: Activity, label: 'Activity', nodeType: 'activity' as NodeType, minTier: 'standard' },
 ]
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function Sidebar({ onHomeClick, onCreateAgent, onAssistantsClick, onSkillsClick, onSafetyClick, onDiscussionsClick, onConnectionsClick, onResourcesClick }: SidebarProps) {
+export function Sidebar({ favorites = [], onSelectFavorite, onHomeClick, onCreateAgent, onAssistantsClick, onSkillsClick, onSafetyClick, onDiscussionsClick, onConnectionsClick, onResourcesClick, onActivityClick }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const { tier } = useComplexity()
   const visibleItems = ITEMS.filter((item) => TIER_ORDER[tier] >= TIER_ORDER[item.minTier])
@@ -112,6 +124,16 @@ export function Sidebar({ onHomeClick, onCreateAgent, onAssistantsClick, onSkill
         </Tooltip>
       </div>
 
+      {/* Favorites */}
+      {!collapsed && favorites.length > 0 && (
+        <div className="px-2 pt-2">
+          <FavoritesSection
+            agents={favorites}
+            onSelect={onSelectFavorite ?? (() => {})}
+          />
+        </div>
+      )}
+
       {/* Node palette */}
       <nav className="flex flex-1 flex-col gap-1 p-2" aria-label="Node palette">
         {visibleItems.map((item) => (
@@ -136,6 +158,8 @@ export function Sidebar({ onHomeClick, onCreateAgent, onAssistantsClick, onSkill
                     ? onConnectionsClick
                     : item.nodeType === 'resource'
                     ? onResourcesClick
+                    : item.nodeType === 'activity'
+                    ? onActivityClick
                     : undefined
                 }
                 aria-label={item.label}

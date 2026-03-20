@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
+import { useTheme, type ThemeMode } from '@/hooks/use-theme'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -245,6 +246,9 @@ function ConnectionIndicator({ status }: { readonly status: ConnectionStatus }) 
 // ─── SettingsPanel ─────────────────────────────────────────────────────────
 
 export function SettingsPanel({ open, onOpenChange }: SettingsPanelProps) {
+  // ── Theme ────────────────────────────────────────────────────────────
+  const { mode: themeMode, setMode: setThemeMode } = useTheme()
+
   // ── Appearance ────────────────────────────────────────────────────────
   const [complexity, setComplexity] = useState(() => storageGet<number>('complexity', 5))
 
@@ -310,6 +314,16 @@ export function SettingsPanel({ open, onOpenChange }: SettingsPanelProps) {
         <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-5 py-5">
           {/* Appearance */}
           <Section title="Appearance">
+            <RadioGroup<ThemeMode>
+              label="Theme"
+              value={themeMode}
+              onChange={setThemeMode}
+              options={[
+                { value: 'system', label: 'System', description: 'Follow your OS preference.' },
+                { value: 'light', label: 'Light' },
+                { value: 'dark', label: 'Dark' },
+              ]}
+            />
             <SliderRow
               label={`Interface Complexity — ${complexityLabel}`}
               min={1}

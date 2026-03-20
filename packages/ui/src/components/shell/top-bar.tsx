@@ -1,12 +1,13 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { Music, Bell, Settings } from 'lucide-react'
+import { Music, Bell } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { NotificationPanel } from '@/components/shell/notification-panel'
 import { WorkspaceSwitcher, type Workspace } from '@/components/panels/workspace-switcher'
 import { cn } from '@/lib/utils'
+import { UserAvatar } from '@/components/shell/user-avatar'
 import type { OrchestraNotification } from '@/hooks/use-notifications'
 import { useComplexity } from '@/hooks/use-complexity'
 
@@ -184,15 +185,7 @@ export function TopBar({
           />
         </div>
 
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 w-8 p-0"
-          aria-label="Settings"
-          onClick={onSettingsClick}
-        >
-          <Settings className="h-4 w-4" />
-        </Button>
+        <UserAvatar onSettingsClick={onSettingsClick} />
       </div>
     </header>
   )

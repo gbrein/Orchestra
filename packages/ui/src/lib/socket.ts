@@ -12,6 +12,7 @@ let _created = false
  * Returns the socket singleton, creating it lazily on first call.
  * The socket is created with `autoConnect: false` — it will NOT
  * connect until `.connect()` is explicitly called.
+ * Session cookie is sent automatically via withCredentials.
  */
 export function getSocket(): OrchestraSocket {
   if (!_socket) {
@@ -22,6 +23,7 @@ export function getSocket(): OrchestraSocket {
       reconnectionDelay: 3000,
       reconnectionDelayMax: 10000,
       timeout: 5000,
+      withCredentials: true,
     })
     _created = true
   }

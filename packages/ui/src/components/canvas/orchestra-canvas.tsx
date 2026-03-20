@@ -26,6 +26,7 @@ import { SkillNode } from './nodes/skill-node'
 import { PolicyNode } from './nodes/policy-node'
 import { McpNode, type McpNodeData } from './nodes/mcp-node'
 import { ResourceNode, type ResourceNodeData } from './nodes/resource-node'
+import { StickyNoteNode } from './nodes/sticky-note-node'
 import { OrchestraEdge, type OrchestraEdgeData } from './edges/orchestra-edge'
 import {
   isValidConnection,
@@ -44,6 +45,7 @@ const NODE_TYPES: NodeTypes = {
   policy: PolicyNode,
   mcp: McpNode,
   resource: ResourceNode,
+  note: StickyNoteNode,
 }
 
 const EDGE_TYPES: EdgeTypes = {

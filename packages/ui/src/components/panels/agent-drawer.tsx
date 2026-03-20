@@ -31,6 +31,7 @@ import { ModelSelector } from './model-selector'
 import { AgentSkillsTab } from './agent-skills-tab'
 import { AgentMcpTab, type AgentMcpAssignment } from './agent-mcp-tab'
 import { LoopConfig, type LoopConfigValue } from './loop-config'
+import { AgentMemoryTab } from './agent-memory-tab'
 import type { McpServer } from './mcp-management'
 import {
   type Agent,
@@ -815,12 +816,13 @@ function AdvancedTab({
 // Main Component
 // ---------------------------------------------------------------------------
 
-const ALL_TABS = ['settings', 'skills', 'mcp', 'safety', 'conversations', 'advanced'] as const
+const ALL_TABS = ['settings', 'skills', 'memory', 'mcp', 'safety', 'conversations', 'advanced'] as const
 type DrawerTab = (typeof ALL_TABS)[number]
 
 const TAB_LABELS: Record<DrawerTab, string> = {
   settings: 'Settings',
   skills: 'Skills',
+  memory: 'Memory',
   mcp: 'MCP',
   safety: 'Safety',
   conversations: 'Convos',
@@ -830,6 +832,7 @@ const TAB_LABELS: Record<DrawerTab, string> = {
 const TAB_MIN_TIER: Record<DrawerTab, 'simple' | 'standard' | 'full'> = {
   settings: 'simple',
   skills: 'simple',
+  memory: 'standard',
   safety: 'standard',
   conversations: 'standard',
   mcp: 'full',
@@ -932,6 +935,10 @@ export function AgentDrawer({
                     agentId={agent.id}
                     onOpenMarketplace={onOpenMarketplace ?? (() => undefined)}
                   />
+                </TabsContent>
+
+                <TabsContent value="memory" className="mt-0">
+                  <AgentMemoryTab agentId={agent.id} />
                 </TabsContent>
 
                 <TabsContent value="mcp" className="mt-0">

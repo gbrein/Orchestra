@@ -1,7 +1,7 @@
 'use client'
 
 import type { Node, XYPosition } from '@xyflow/react'
-import type { AgentStatus } from '@orchestra/shared'
+import type { AgentStatus, AgentMode } from '@orchestra/shared'
 
 // ─── Node data types ───────────────────────────────────────────────────────
 // React Flow v12 requires data to extend Record<string, unknown>
@@ -13,6 +13,7 @@ export interface AgentNodeData extends Record<string, unknown> {
   status: AgentStatus
   model?: string
   purpose?: string
+  permissionMode?: AgentMode
 }
 
 export interface SkillNodeData extends Record<string, unknown> {
@@ -24,6 +25,11 @@ export interface SkillNodeData extends Record<string, unknown> {
 export interface PolicyNodeData extends Record<string, unknown> {
   name: string
   level: 'global' | 'agent' | 'session'
+}
+
+export interface StickyNoteNodeData extends Record<string, unknown> {
+  text?: string
+  color?: string
 }
 
 export interface ResourceNodeData extends Record<string, unknown> {
@@ -39,6 +45,7 @@ export interface ResourceNodeData extends Record<string, unknown> {
 export type AgentFlowNode = Node<AgentNodeData, 'agent'>
 export type SkillFlowNode = Node<SkillNodeData, 'skill'>
 export type PolicyFlowNode = Node<PolicyNodeData, 'policy'>
+export type StickyNoteFlowNode = Node<StickyNoteNodeData, 'note'>
 export type ResourceFlowNode = Node<ResourceNodeData, 'resource'>
 
 // ─── Node factories ────────────────────────────────────────────────────────
@@ -65,6 +72,18 @@ export function createPolicyNode(position: XYPosition, data: PolicyNodeData): Po
   return {
     id: crypto.randomUUID(),
     type: 'policy',
+    position,
+    data,
+  }
+}
+
+export function createStickyNoteNode(
+  position: XYPosition,
+  data: StickyNoteNodeData = {},
+): StickyNoteFlowNode {
+  return {
+    id: crypto.randomUUID(),
+    type: 'note',
     position,
     data,
   }

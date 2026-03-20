@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { TokenUsage } from '@orchestra/shared'
+import type { TokenUsage, AgentMode } from '@orchestra/shared'
 import { getSocket } from '@/lib/socket'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -31,9 +31,11 @@ export interface UseAgentStreamReturn {
   isStreaming: boolean
   tokenUsage: TokenUsage | null
   error: AgentChatError | null
+  mode: AgentMode
   sendMessage: (message: string) => void
   stopAgent: () => void
   clearMessages: () => void
+  setMode: (mode: AgentMode) => void
 }
 
 // ─── Error classification ──────────────────────────────────────────────────
@@ -71,6 +73,7 @@ export function useAgentStream(
   const [isStreaming, setIsStreaming] = useState<boolean>(false)
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null)
   const [error, setError] = useState<AgentChatError | null>(null)
+  const [mode, setModeState] = useState<AgentMode>('default')
 
   const streamingMessageIdRef = useRef<string | null>(null)
   const listenersAttachedRef = useRef(false)
@@ -196,6 +199,11 @@ export function useAgentStream(
         return prev
       })
     })
+
+    socket.on('agent:mode_changed', (data) => {
+      if (data.agentId !== agentIdRef.current) return
+      setModeState(data.mode)
+    })
   }, [])
 
   const sendMessage = useCallback(
@@ -283,5 +291,17 @@ export function useAgentStream(
     streamingMessageIdRef.current = null
   }, [])
 
-  return { messages, isStreaming, tokenUsage, error, sendMessage, stopAgent, clearMessages }
+  const setMode = useCallback(
+    (newMode: AgentMode) => {
+      if (!agentId) return
+      const sock = getSocket()
+      ensureListeners()
+      if (sock.connected) {
+        sock.emit('agent:set_mode', { agentId, mode: newMode })
+      }
+    },
+    [agentId, ensureListeners],
+  )
+
+  return { messages, isStreaming, tokenUsage, error, mode, sendMessage, stopAgent, clearMessages, setMode }
 }

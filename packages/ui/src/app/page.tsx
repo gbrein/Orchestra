@@ -31,7 +31,12 @@ import { PrdEditor, type PrdData } from '@/components/panels/prd-editor'
 import { AssistantsList, type AssistantSummary } from '@/components/panels/assistants-list'
 import { GlobalSafetyPanel } from '@/components/panels/global-safety-panel'
 import { AgentDrawer } from '@/components/panels/agent-drawer'
+import { QuickRunBar } from '@/components/shell/quick-run-bar'
+import { ActivityFeed } from '@/components/panels/activity-feed'
+import { WorkspaceContextEditor } from '@/components/panels/workspace-context-editor'
+import { CostDashboard } from '@/components/panels/cost-dashboard'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
+import { apiGet } from '@/lib/api'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { ComplexityContext, useComplexityState } from '@/hooks/use-complexity'
 import { useSocket } from '@/hooks/use-socket'
@@ -89,9 +94,39 @@ export default function Home() {
   // PRD editor state
   const [prdEditorOpen, setPrdEditorOpen] = useState(false)
 
+  const [quickRunOpen, setQuickRunOpen] = useState(false)
+  const [activityOpen, setActivityOpen] = useState(false)
+  const [contextEditorOpen, setContextEditorOpen] = useState(false)
+  const [costDashboardOpen, setCostDashboardOpen] = useState(false)
   const [createAgentOpen, setCreateAgentOpen] = useState(false)
   const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+
+  // Favorites — fetched from DB
+  const [favoriteAgents, setFavoriteAgents] = useState<Array<{ id: string; name: string; avatar?: string | null; status: string }>>([])
+
+  useEffect(() => {
+    apiGet<Array<{ id: string; name: string; avatar: string | null; status: string; isFavorite: boolean }>>('/api/agents')
+      .then((agents) => {
+        setFavoriteAgents(
+          agents
+            .filter((a) => a.isFavorite)
+            .map((a) => ({ id: a.id, name: a.name, avatar: a.avatar, status: a.status })),
+        )
+      })
+      .catch(() => {})
+  }, [])
+
+  const handleSelectFavorite = useCallback((agentId: string) => {
+    const fav = favoriteAgents.find((a) => a.id === agentId)
+    if (!fav) return
+    setSelectedAgent({
+      id: fav.id,
+      name: fav.name,
+      status: fav.status as AgentStatus,
+    })
+    setChatOpen(true)
+  }, [favoriteAgents])
 
   const [zoomLevel, setZoomLevel] = useState(100)
   const { value: complexity, refresh: refreshComplexity } = useComplexityState()
@@ -483,6 +518,10 @@ export default function Home() {
     setAssistantsListOpen(false)
     setSafetyPanelOpen(false)
     setResourceBrowserOpen(false)
+    setQuickRunOpen(false)
+    setActivityOpen(false)
+    setContextEditorOpen(false)
+    setCostDashboardOpen(false)
     setNodes((prev) =>
       prev.map((n) => ({ ...n, selected: false })),
     )
@@ -504,6 +543,22 @@ export default function Home() {
     }
   }, [handleCreateAgent, handleToggleMarketplace, handleTopBarDiscussionsClick, handleToggleShortcuts, handleUseTemplate])
 
+  const handleQuickRun = useCallback(() => {
+    setQuickRunOpen((prev) => !prev)
+  }, [])
+
+  const handleActivityClick = useCallback(() => {
+    setActivityOpen(true)
+  }, [])
+
+  const handleContextEditorClick = useCallback(() => {
+    setContextEditorOpen(true)
+  }, [])
+
+  const handleCostDashboardClick = useCallback(() => {
+    setCostDashboardOpen(true)
+  }, [])
+
   useKeyboardShortcuts({
     onUndo: handleUndo,
     onRedo: handleRedo,
@@ -514,6 +569,7 @@ export default function Home() {
     onToggleMarketplace: handleToggleMarketplace,
     onToggleShortcuts: handleToggleShortcuts,
     onEscape: handleEscape,
+    onQuickRun: handleQuickRun,
   })
 
   // ── Node double-click → open AgentChat ────────────────────────────────
@@ -644,6 +700,8 @@ export default function Home() {
       />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
+          favorites={favoriteAgents}
+          onSelectFavorite={handleSelectFavorite}
           onHomeClick={() => setShowHome(true)}
           onCreateAgent={handleCreateAgent}
           onAssistantsClick={handleAssistantsClick}
@@ -652,6 +710,7 @@ export default function Home() {
           onDiscussionsClick={handleSidebarDiscussionsClick}
           onConnectionsClick={handleConnectionsClick}
           onResourcesClick={handleResourcesClick}
+          onActivityClick={handleActivityClick}
         />
         <main className="relative flex-1 overflow-hidden">
           <ErrorBoundary>
@@ -862,10 +921,12 @@ export default function Home() {
             memoryEnabled: false,
             model: selectedAgent.model ?? null,
             status: selectedAgent.status,
+            permissionMode: 'default' as const,
             loopEnabled: false,
             loopCriteria: null,
             maxIterations: 10,
             teamEnabled: false,
+            isFavorite: false,
             canvasX: 0,
             canvasY: 0,
             createdAt: '',
@@ -943,6 +1004,74 @@ export default function Home() {
           discussion={selectedDiscussion}
         />
       </ErrorBoundary>
+
+      {/* Quick Run Bar (Cmd+Shift+R) */}
+      <QuickRunBar
+        open={quickRunOpen}
+        agents={nodes
+          .filter((n) => n.type === 'agent')
+          .map((n) => {
+            const d = n.data as AgentNodeData
+            return { id: n.id, name: d.name, description: d.description }
+          })}
+        onClose={() => setQuickRunOpen(false)}
+        onRun={(agentId, message) => {
+          const node = nodes.find((n) => n.id === agentId)
+          if (!node) return
+          const d = node.data as AgentNodeData
+          setSelectedAgent({
+            id: agentId,
+            name: d.name,
+            description: d.description,
+            purpose: d.purpose,
+            status: d.status,
+            model: d.model,
+          })
+          setChatOpen(true)
+        }}
+      />
+
+      {/* Activity Feed */}
+      <Sheet open={activityOpen} onOpenChange={setActivityOpen}>
+        <SheetContent side="right" className="w-[400px] p-0 sm:w-[400px]">
+          <SheetTitle className="border-b border-border px-4 py-3 text-sm font-semibold">
+            Activity
+          </SheetTitle>
+          <div className="overflow-y-auto" style={{ height: 'calc(100% - 48px)' }}>
+            <ActivityFeed workspaceId={activeWorkspaceId || null} />
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Workspace Context Editor */}
+      <Sheet open={contextEditorOpen} onOpenChange={setContextEditorOpen}>
+        <SheetContent side="right" className="w-[500px] p-0 sm:w-[500px]">
+          <SheetTitle className="border-b border-border px-4 py-3 text-sm font-semibold">
+            Workspace Context
+          </SheetTitle>
+          <div className="overflow-y-auto" style={{ height: 'calc(100% - 48px)' }}>
+            {activeWorkspaceId ? (
+              <WorkspaceContextEditor workspaceId={activeWorkspaceId} />
+            ) : (
+              <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+                Select a workspace first
+              </div>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Cost Dashboard */}
+      <Sheet open={costDashboardOpen} onOpenChange={setCostDashboardOpen}>
+        <SheetContent side="right" className="w-[450px] p-0 sm:w-[450px]">
+          <SheetTitle className="border-b border-border px-4 py-3 text-sm font-semibold">
+            Cost Dashboard
+          </SheetTitle>
+          <div className="overflow-y-auto" style={{ height: 'calc(100% - 48px)' }}>
+            <CostDashboard />
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
     </ComplexityContext.Provider>
   )

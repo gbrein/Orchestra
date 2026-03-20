@@ -18,14 +18,24 @@ export interface WorkspaceContext {
  * - variable  → injected into env (secrets are decrypted first)
  */
 export async function buildWorkspaceContext(workspaceId: string): Promise<WorkspaceContext> {
-  const resources = await prisma.workspaceResource.findMany({
-    where: { workspaceId },
-    orderBy: { createdAt: 'asc' },
-  })
+  const [workspace, resources] = await Promise.all([
+    prisma.workspace.findUnique({ where: { id: workspaceId }, select: { contextDocument: true } }),
+    prisma.workspaceResource.findMany({
+      where: { workspaceId },
+      orderBy: { createdAt: 'asc' },
+    }),
+  ])
 
   const addDirs: string[] = []
   const appendPromptSections: string[] = []
   const env: Record<string, string> = {}
+
+  // Workspace context document — prepended before all resources
+  if (workspace?.contextDocument) {
+    appendPromptSections.push(
+      `## Workspace Context\n${workspace.contextDocument}`,
+    )
+  }
 
   const fileResources = resources.filter((r) => r.type === 'file')
   const urlResources = resources.filter((r) => r.type === 'url')

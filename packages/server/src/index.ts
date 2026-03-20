@@ -15,6 +15,13 @@ import { approvalRoutes } from './routes/approvals'
 import { mcpServerRoutes } from './routes/mcp-servers'
 import { loopRoutes, activeLoops, activeChains, activePipelines } from './routes/loops'
 import { resourceRoutes } from './routes/resources'
+import { activityRoutes } from './routes/activity'
+import { memoryRoutes } from './routes/memories'
+import { analyticsRoutes } from './routes/analytics'
+import { authRoutes } from './routes/auth'
+import { registerAuthMiddleware } from './auth/middleware'
+import { auth } from './auth/auth'
+import { fromNodeHeaders } from 'better-auth/node'
 import { ProcessManager } from './engine/process-manager'
 import { ApprovalManager } from './engine/approval-manager'
 import { registerSocketHandlers } from './socket/handlers'
@@ -58,6 +65,7 @@ async function main() {
   await app.register(cors, {
     origin: UI_ORIGIN,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    credentials: true,
   })
 
   await app.register(multipart, {
@@ -65,6 +73,12 @@ async function main() {
       fileSize: 50 * 1024 * 1024, // 50 MB — matches MAX_FILE_SIZE in file-storage.ts
     },
   })
+
+  // Auth routes (before middleware so /api/auth/* is accessible)
+  await app.register(authRoutes)
+
+  // Auth middleware — validates session on all non-public routes
+  await registerAuthMiddleware(app)
 
   // Routes
   await app.register(agentRoutes)
@@ -77,6 +91,9 @@ async function main() {
   await app.register(mcpServerRoutes)
   await app.register(loopRoutes)
   await app.register(resourceRoutes)
+  await app.register(activityRoutes)
+  await app.register(memoryRoutes)
+  await app.register(analyticsRoutes)
 
   // Health check
   app.get('/api/health', async () => ({
@@ -96,6 +113,27 @@ async function main() {
   // Socket.IO setup — attach to the raw HTTP server (before Fastify listen)
   const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
     cors: { origin: UI_ORIGIN, methods: ['GET', 'POST'] },
+  })
+
+  // Socket.IO auth middleware — validate session cookie
+  io.use(async (socket, next) => {
+    try {
+      const cookieHeader = socket.handshake.headers.cookie
+      if (!cookieHeader) {
+        return next(new Error('Authentication required'))
+      }
+      const session = await auth.api.getSession({
+        headers: fromNodeHeaders({ cookie: cookieHeader }),
+      })
+      if (!session) {
+        return next(new Error('Invalid session'))
+      }
+      // Attach user to socket data for downstream use
+      ;(socket.data as Record<string, unknown>).user = session.user
+      next()
+    } catch {
+      next(new Error('Authentication failed'))
+    }
   })
 
   io.on('connection', (socket) => {

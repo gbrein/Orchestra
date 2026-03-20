@@ -2,6 +2,8 @@ import type { Metadata } from 'next'
 import localFont from 'next/font/local'
 import { cn } from '@/lib/utils'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { AuthProvider } from '@/hooks/use-auth'
+import { AuthGuard } from '@/components/auth/auth-guard'
 import './globals.css'
 
 const geistSans = localFont({
@@ -29,7 +31,11 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body className={cn(geistSans.variable, geistMono.variable, 'font-sans antialiased')}>
-        <TooltipProvider>{children}</TooltipProvider>
+        <AuthProvider>
+          <AuthGuard>
+            <TooltipProvider>{children}</TooltipProvider>
+          </AuthGuard>
+        </AuthProvider>
       </body>
     </html>
   )

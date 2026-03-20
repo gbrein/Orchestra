@@ -15,9 +15,11 @@ const SaveCanvasSchema = z.object({
 })
 
 export async function canvasRoutes(app: FastifyInstance) {
-  app.get('/api/workspaces', async (_req, reply) => {
+  app.get('/api/workspaces', async (req, reply) => {
     try {
+      const userId = req.user?.id
       const workspaces = await prisma.workspace.findMany({
+        where: userId ? { OR: [{ userId }, { userId: null }] } : undefined,
         include: {
           canvasLayouts: { select: { id: true, name: true, updatedAt: true } },
         },
@@ -32,7 +34,9 @@ export async function canvasRoutes(app: FastifyInstance) {
   app.post('/api/workspaces', async (req, reply) => {
     try {
       const body = CreateWorkspaceSchema.parse(req.body)
-      const workspace = await prisma.workspace.create({ data: body })
+      const workspace = await prisma.workspace.create({
+        data: { ...body, userId: req.user?.id },
+      })
       sendSuccess(reply, workspace, 201)
     } catch (error) {
       sendError(reply, error)
@@ -51,6 +55,25 @@ export async function canvasRoutes(app: FastifyInstance) {
         orderBy: { updatedAt: 'desc' },
       })
       sendSuccess(reply, layout ?? null)
+    } catch (error) {
+      sendError(reply, error)
+    }
+  })
+
+  // Update workspace context document
+  app.patch<{ Params: { id: string } }>('/api/workspaces/:id/context', async (req, reply) => {
+    try {
+      const { id: workspaceId } = req.params
+      const body = z.object({ contextDocument: z.string().nullable() }).parse(req.body)
+
+      const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } })
+      if (!workspace) throw new NotFoundError('Workspace', workspaceId)
+
+      const updated = await prisma.workspace.update({
+        where: { id: workspaceId },
+        data: { contextDocument: body.contextDocument },
+      })
+      sendSuccess(reply, updated)
     } catch (error) {
       sendError(reply, error)
     }

@@ -57,6 +57,68 @@ enum StoryStatus {
   failed
 }
 
+// ─── Auth models (Better Auth) ──────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  name          String
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  authSessions  AuthSession[]
+  accounts      Account[]
+  workspaces    Workspace[]     @relation("WorkspaceOwner")
+  agents        Agent[]         @relation("AgentOwner")
+}
+
+model AuthSession {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Account {
+  id                    String    @id @default(uuid())
+  userId                String
+  providerId            String
+  accountId             String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(uuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// ─── Domain models ──────────────────────────────────────────────────────────
+
 model Agent {
   id              String       @id @default(uuid())
   name            String
@@ -69,15 +131,19 @@ model Agent {
   memoryEnabled   Boolean      @default(false)
   model           String?
   status          AgentStatus  @default(idle)
+  permissionMode  String       @default("default")
   loopEnabled     Boolean      @default(false)
   loopCriteria    Json?
   maxIterations   Int          @default(10)
   teamEnabled     Boolean      @default(false)
+  isFavorite      Boolean      @default(false)
   canvasX         Float        @default(0)
   canvasY         Float        @default(0)
+  userId          String?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
+  owner              User?            @relation("AgentOwner", fields: [userId], references: [id])
   skills             AgentSkill[]
   policies           Policy[]
   memories           Memory[]
@@ -85,6 +151,8 @@ model Agent {
   participations     TableParticipant[]
   moderatedTables    DiscussionTable[]   @relation("moderator")
   mcpAssignments     AgentMcpServer[]
+
+  @@index([userId])
 }
 
 model Skill {
@@ -206,13 +274,18 @@ enum ResourceType {
 }
 
 model Workspace {
-  id        String   @id @default(uuid())
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(uuid())
+  name            String
+  contextDocument String?
+  userId          String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
+  owner         User?              @relation("WorkspaceOwner", fields: [userId], references: [id])
   canvasLayouts CanvasLayout[]
   resources     WorkspaceResource[]
+
+  @@index([userId])
 }
 
 model WorkspaceResource {
@@ -271,6 +344,55 @@ model AgentMcpServer {
 
   @@id([agentId, mcpServerId])
 }
+
+// ─── Activity Feed ──────────────────────────────────────────────────────────
+
+model ActivityEvent {
+  id          String   @id @default(uuid())
+  userId      String?
+  workspaceId String?
+  agentId     String?
+  type        String
+  title       String
+  detail      String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([workspaceId, createdAt])
+}
+
+// ─── Cost Tracking ──────────────────────────────────────────────────────────
+
+model SessionUsage {
+  id        String   @id @default(uuid())
+  sessionId String
+  agentId   String?
+  model     String?
+  inputTokens  Int   @default(0)
+  outputTokens Int   @default(0)
+  costUsd      Float @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([agentId, createdAt])
+  @@index([sessionId])
+}
+
+// ─── Artifacts ──────────────────────────────────────────────────────────────
+
+model Artifact {
+  id        String   @id @default(uuid())
+  sessionId String
+  fileName  String
+  filePath  String
+  fileSize  Int?
+  mimeType  String?
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+}
+
+// ─── PRD & Stories ──────────────────────────────────────────────────────────
 
 model PRD {
   id        String   @id @default(uuid())

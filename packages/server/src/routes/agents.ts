@@ -13,14 +13,19 @@ const CreateAgentSchema = z.object({
   allowedTools: z.array(z.string()).default([]),
   memoryEnabled: z.boolean().default(false),
   model: z.string().optional(),
+  permissionMode: z.enum(['plan', 'default', 'edit']).default('default'),
 })
 
-const UpdateAgentSchema = CreateAgentSchema.partial()
+const UpdateAgentSchema = CreateAgentSchema.partial().extend({
+  isFavorite: z.boolean().optional(),
+})
 
 export async function agentRoutes(app: FastifyInstance) {
-  app.get('/api/agents', async (_req, reply) => {
+  app.get('/api/agents', async (req, reply) => {
     try {
+      const userId = req.user?.id
       const agents = await prisma.agent.findMany({
+        where: userId ? { OR: [{ userId }, { userId: null }] } : undefined,
         include: {
           skills: { include: { skill: true } },
         },
@@ -52,7 +57,9 @@ export async function agentRoutes(app: FastifyInstance) {
   app.post('/api/agents', async (req, reply) => {
     try {
       const body = CreateAgentSchema.parse(req.body)
-      const agent = await prisma.agent.create({ data: body })
+      const agent = await prisma.agent.create({
+        data: { ...body, userId: req.user?.id },
+      })
       sendSuccess(reply, agent, 201)
     } catch (error) {
       sendError(reply, error)
@@ -61,12 +68,24 @@ export async function agentRoutes(app: FastifyInstance) {
 
   app.patch<{ Params: { id: string } }>('/api/agents/:id', async (req, reply) => {
     try {
-      const body = UpdateAgentSchema.parse(req.body)
+      const raw = req.body as Record<string, unknown>
+      const body = UpdateAgentSchema.parse(raw)
+
+      // Pass through additional known fields that Prisma accepts directly
+      const data: Record<string, unknown> = { ...body }
+      if ('status' in raw) data.status = raw.status
+      if ('canvasX' in raw) data.canvasX = raw.canvasX
+      if ('canvasY' in raw) data.canvasY = raw.canvasY
+      if ('loopEnabled' in raw) data.loopEnabled = raw.loopEnabled
+      if ('loopCriteria' in raw) data.loopCriteria = raw.loopCriteria ?? undefined
+      if ('maxIterations' in raw) data.maxIterations = raw.maxIterations
+      if ('teamEnabled' in raw) data.teamEnabled = raw.teamEnabled
+
       const existing = await prisma.agent.findUnique({ where: { id: req.params.id } })
       if (!existing) throw new NotFoundError('Agent', req.params.id)
       const agent = await prisma.agent.update({
         where: { id: req.params.id },
-        data: body,
+        data,
       })
       sendSuccess(reply, agent)
     } catch (error) {

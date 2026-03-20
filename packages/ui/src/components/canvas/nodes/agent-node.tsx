@@ -6,7 +6,8 @@ import Image from 'next/image'
 import { Circle, Loader2, Clock, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getStatusColor, getStatusLabel, type AgentNodeData } from '@/lib/canvas-utils'
-import type { AgentStatus } from '@orchestra/shared'
+import { ModeBadge, MODE_BORDER_COLORS } from '@/components/panels/mode-toggle'
+import type { AgentStatus, AgentMode } from '@orchestra/shared'
 import { MODEL_TIERS } from '@orchestra/shared'
 
 // ─── Status icon ───────────────────────────────────────────────────────────
@@ -83,9 +84,10 @@ function ModelBadge({ model }: { model?: string }) {
 function AgentNodeComponent(props: NodeProps) {
   const data = props.data as AgentNodeData
   const { selected } = props
-  const { name, description, avatar, status, model } = data
+  const { name, description, avatar, status, model, permissionMode } = data
   const statusColor = getStatusColor(status)
   const statusLabel = getStatusLabel(status)
+  const modeBorderColor = MODE_BORDER_COLORS[(permissionMode ?? 'default') as AgentMode]
 
   return (
     <>
@@ -102,6 +104,7 @@ function AgentNodeComponent(props: NodeProps) {
           'relative w-[220px] overflow-hidden rounded-lg border bg-card text-card-foreground shadow-md transition-shadow',
           selected && 'ring-2 ring-primary ring-offset-1 ring-offset-background',
         )}
+        style={modeBorderColor ? { borderLeftWidth: 3, borderLeftColor: modeBorderColor } : undefined}
         role="button"
         aria-label={`Agent: ${name}, status: ${statusLabel}`}
         tabIndex={0}
@@ -122,9 +125,12 @@ function AgentNodeComponent(props: NodeProps) {
             </div>
           </div>
 
-          {/* Bottom row: model badge + status */}
+          {/* Bottom row: model badge + mode + status */}
           <div className="mt-2.5 flex items-center justify-between gap-2">
-            <ModelBadge model={model} />
+            <div className="flex items-center gap-1.5">
+              <ModelBadge model={model} />
+              <ModeBadge mode={(permissionMode ?? 'default') as AgentMode} />
+            </div>
             <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
               <StatusIcon status={status} />
               <span>{statusLabel}</span>

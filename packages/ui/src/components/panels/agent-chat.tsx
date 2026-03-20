@@ -30,6 +30,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { useAgentStream, type ChatMessage, type AgentChatError } from '@/hooks/use-agent-stream'
 import { useResources } from '@/hooks/use-resources'
+import { ModeToggle } from '@/components/panels/mode-toggle'
 import type { AgentStatus, TokenUsage } from '@orchestra/shared'
 import { MODEL_TIERS } from '@orchestra/shared'
 
@@ -462,7 +463,7 @@ export function AgentChat({
   onEdit,
   onManageResources,
 }: AgentChatProps) {
-  const { messages, isStreaming, tokenUsage, error, sendMessage, stopAgent, clearMessages } =
+  const { messages, isStreaming, tokenUsage, error, mode, sendMessage, stopAgent, clearMessages, setMode } =
     useAgentStream(agentId, workspaceId)
 
   const { resources } = useResources(workspaceId ?? null)
@@ -537,8 +538,13 @@ export function AgentChat({
             )}
           </div>
         </div>
+        {/* Mode toggle */}
+        <div className="mt-2 border-t border-border pt-2">
+          <ModeToggle mode={mode} onChange={setMode} disabled={isStreaming} />
+        </div>
+
         {/* Action bar */}
-        <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
+        <div className="mt-2 flex items-center justify-between">
           <div className="flex items-center gap-1">
             {onEdit && (
               <Button

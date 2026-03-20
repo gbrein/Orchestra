@@ -1,4 +1,5 @@
 import type { TokenUsage } from './session'
+import type { AgentMode } from './agent'
 
 // Minimal chain definition used for socket-level communication
 export interface ChainStepPayload {
@@ -31,6 +32,7 @@ export interface ClientToServerEvents {
   'loop:start': (data: { agentId: string; message: string }) => void
   'loop:stop': (data: { agentId: string }) => void
   'loop:approve': (data: { agentId: string; loopId: string; approved: boolean }) => void
+  'agent:set_mode': (data: { agentId: string; mode: AgentMode }) => void
   'chain:execute': (data: { chainId?: string; definition: ChainDefinition; initialMessage: string }) => void
   'chain:stop': (data: { chainId: string }) => void
 }
@@ -38,6 +40,7 @@ export interface ClientToServerEvents {
 // Server -> Client events
 export interface ServerToClientEvents {
   'agent:status': (data: { agentId: string; status: string }) => void
+  'agent:mode_changed': (data: { agentId: string; mode: AgentMode }) => void
   'agent:text': (data: { agentId: string; sessionId: string; content: string; partial: boolean }) => void
   'agent:tool_use': (data: { agentId: string; sessionId: string; toolName: string; input: unknown }) => void
   'agent:tool_result': (data: { agentId: string; sessionId: string; toolName: string; output: unknown }) => void

@@ -113,7 +113,15 @@ export async function buildSpawnConfig(agentId: string, workspaceId?: string): P
 
   const allPolicies = [...globalPolicies, ...agent.policies]
 
-  let permissionMode = 'dontAsk'
+  // Map AgentMode to CLI permission mode strings
+  const AGENT_MODE_TO_PERMISSION: Record<string, string> = {
+    plan: 'plan',
+    default: 'default',
+    edit: 'acceptEdits',
+  }
+
+  // Start with the agent's own permissionMode setting
+  let permissionMode = AGENT_MODE_TO_PERMISSION[agent.permissionMode] ?? 'default'
   let maxBudgetUsd: number | undefined
 
   for (const policy of allPolicies) {
@@ -126,7 +134,7 @@ export async function buildSpawnConfig(agentId: string, workspaceId?: string): P
       // Agent-level policy overrides global
       if (policy.level === 'agent' || policy.agentId === agentId) {
         permissionMode = rules.permissionMode
-      } else if (permissionMode === 'dontAsk') {
+      } else if (permissionMode === 'default') {
         permissionMode = rules.permissionMode
       }
     }
