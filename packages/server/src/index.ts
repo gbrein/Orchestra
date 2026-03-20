@@ -19,6 +19,7 @@ import { activityRoutes } from './routes/activity'
 import { memoryRoutes } from './routes/memories'
 import { analyticsRoutes } from './routes/analytics'
 import { authRoutes } from './routes/auth'
+import { gitRoutes } from './routes/git'
 import { registerAuthMiddleware } from './auth/middleware'
 import { auth } from './auth/auth'
 import { fromNodeHeaders } from 'better-auth/node'
@@ -94,6 +95,7 @@ async function main() {
   await app.register(activityRoutes)
   await app.register(memoryRoutes)
   await app.register(analyticsRoutes)
+  await app.register(gitRoutes)
 
   // Health check
   app.get('/api/health', async () => ({

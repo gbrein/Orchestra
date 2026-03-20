@@ -39,6 +39,7 @@ import { QuickRunBar } from '@/components/shell/quick-run-bar'
 import { ActivityFeed } from '@/components/panels/activity-feed'
 import { WorkspaceContextEditor } from '@/components/panels/workspace-context-editor'
 import { WorkspacePlanEditor } from '@/components/panels/workspace-plan-editor'
+import { GitPanel } from '@/components/panels/git-panel'
 import { CostDashboard } from '@/components/panels/cost-dashboard'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { apiGet } from '@/lib/api'
@@ -105,6 +106,7 @@ export default function Home() {
   const [contextEditorOpen, setContextEditorOpen] = useState(false)
   const [costDashboardOpen, setCostDashboardOpen] = useState(false)
   const [planEditorOpen, setPlanEditorOpen] = useState(false)
+  const [gitPanelOpen, setGitPanelOpen] = useState(false)
   const [workflowRunning, setWorkflowRunning] = useState(false)
   const [workflowStep, setWorkflowStep] = useState<{ index: number; total: number; agentName: string } | null>(null)
   const [workflowChatOpen, setWorkflowChatOpen] = useState(false)
@@ -562,6 +564,7 @@ export default function Home() {
     setCostDashboardOpen(false)
     setPlanEditorOpen(false)
     setWorkflowChatOpen(false)
+    setGitPanelOpen(false)
     setNodes((prev) =>
       prev.map((n) => ({ ...n, selected: false })),
     )
@@ -601,6 +604,10 @@ export default function Home() {
 
   const handlePlanClick = useCallback(() => {
     setPlanEditorOpen(true)
+  }, [])
+
+  const handleGitClick = useCallback(() => {
+    setGitPanelOpen(true)
   }, [])
 
   const handleRunWorkflow = useCallback((message: string) => {
@@ -926,6 +933,7 @@ export default function Home() {
           onResourcesClick={handleResourcesClick}
           onActivityClick={handleActivityClick}
           onPlanClick={handlePlanClick}
+          onGitClick={handleGitClick}
         />
         <main className="relative flex-1 overflow-hidden">
           <ErrorBoundary>
@@ -1335,6 +1343,9 @@ export default function Home() {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Git Panel */}
+      <GitPanel open={gitPanelOpen} onOpenChange={setGitPanelOpen} />
     </div>
     </ComplexityContext.Provider>
   )

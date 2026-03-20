@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Bot, Puzzle, Shield, MessageSquare, Plug, PanelLeftClose, PanelLeft, Plus, Home, FolderOpen, Activity, ClipboardList } from 'lucide-react'
+import { Bot, Puzzle, Shield, MessageSquare, Plug, PanelLeftClose, PanelLeft, Plus, Home, FolderOpen, Activity, ClipboardList, GitBranch } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -17,7 +17,7 @@ import { FavoritesSection } from '@/components/shell/favorites-section'
 // Types
 // ---------------------------------------------------------------------------
 
-export type NodeType = 'agent' | 'skill' | 'safety' | 'discussion' | 'connection' | 'resource' | 'activity' | 'plan'
+export type NodeType = 'agent' | 'skill' | 'safety' | 'discussion' | 'connection' | 'resource' | 'activity' | 'plan' | 'git'
 
 interface SidebarItem {
   readonly icon: React.ElementType
@@ -47,6 +47,7 @@ export interface SidebarProps {
   readonly onResourcesClick?: () => void
   readonly onActivityClick?: () => void
   readonly onPlanClick?: () => void
+  readonly onGitClick?: () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -63,6 +64,7 @@ const ITEMS: readonly SidebarItem[] = [
   { icon: MessageSquare, label: 'Discussions', nodeType: 'discussion', minTier: 'standard' },
   { icon: Plug, label: 'Connections', nodeType: 'connection', minTier: 'full' },
   { icon: ClipboardList, label: 'Plan', shortcut: 'P', nodeType: 'plan', minTier: 'simple' },
+  { icon: GitBranch, label: 'Git', shortcut: 'G', nodeType: 'git', minTier: 'standard' },
   { icon: Activity, label: 'Activity', nodeType: 'activity' as NodeType, minTier: 'standard' },
 ]
 
@@ -70,7 +72,7 @@ const ITEMS: readonly SidebarItem[] = [
 // Component
 // ---------------------------------------------------------------------------
 
-export function Sidebar({ favorites = [], onSelectFavorite, onHomeClick, onCreateAgent, onAssistantsClick, onSkillsClick, onSafetyClick, onDiscussionsClick, onConnectionsClick, onResourcesClick, onActivityClick, onPlanClick }: SidebarProps) {
+export function Sidebar({ favorites = [], onSelectFavorite, onHomeClick, onCreateAgent, onAssistantsClick, onSkillsClick, onSafetyClick, onDiscussionsClick, onConnectionsClick, onResourcesClick, onActivityClick, onPlanClick, onGitClick }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const { tier } = useComplexity()
   const visibleItems = ITEMS.filter((item) => TIER_ORDER[tier] >= TIER_ORDER[item.minTier])
@@ -164,6 +166,8 @@ export function Sidebar({ favorites = [], onSelectFavorite, onHomeClick, onCreat
                     ? onActivityClick
                     : item.nodeType === 'plan'
                     ? onPlanClick
+                    : item.nodeType === 'git'
+                    ? onGitClick
                     : undefined
                 }
                 aria-label={item.label}
