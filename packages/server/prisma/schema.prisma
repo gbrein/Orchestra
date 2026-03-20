@@ -421,3 +421,33 @@ model Story {
 
   @@index([prdId, priority])
 }
+
+model ChainRun {
+  id             String    @id @default(uuid())
+  chainId        String    @unique
+  workspaceId    String?
+  initialMessage String
+  status         String    @default("running")
+  totalSteps     Int       @default(0)
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+  steps          ChainStepResult[]
+}
+
+model ChainStepResult {
+  id          String    @id @default(uuid())
+  chainRunId  String
+  stepIndex   Int
+  agentId     String
+  agentName   String?
+  output      String    @default("")
+  tokensIn    Int       @default(0)
+  tokensOut   Int       @default(0)
+  costUsd     Float     @default(0)
+  status      String    @default("running")
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  chainRun    ChainRun  @relation(fields: [chainRunId], references: [id], onDelete: Cascade)
+
+  @@index([chainRunId])
+}

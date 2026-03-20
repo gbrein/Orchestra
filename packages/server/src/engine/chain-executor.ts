@@ -201,9 +201,7 @@ export class ChainExecutor extends EventEmitter {
       let fullOutput = ''
 
       spawner.on('text', (data: { content: string; partial: boolean }) => {
-        if (!data.partial) {
-          fullOutput += data.content
-        }
+        fullOutput += data.content
         this.emit('step_text', { stepIndex, agentId: step.agentId, content: data.content, partial: data.partial })
       })
 

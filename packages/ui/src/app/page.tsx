@@ -49,6 +49,7 @@ import { useSocket } from '@/hooks/use-socket'
 import { useCanvasPersistence } from '@/hooks/use-canvas-persistence'
 import { useAgentStatus } from '@/hooks/use-agent-status'
 import { useNotifications } from '@/hooks/use-notifications'
+import { injectMessagesIntoCache, type ChatMessage } from '@/hooks/use-agent-stream'
 import { useApprovals } from '@/hooks/use-approvals'
 import type { AgentNodeData } from '@/lib/canvas-utils'
 import type { AgentStatus, DiscussionTable, CreateDiscussionInput } from '@orchestra/shared'
@@ -768,10 +769,11 @@ export default function Home() {
     setWorkflowChatOpen(true)
   }, [])
 
-  // Track current chain ID, steps, and per-step usage for event listeners
+  // Track current chain ID, steps, per-step usage, and per-step chat messages
   const workflowChainIdRef = useRef<string>('')
   const workflowStepsRef = useRef<ReturnType<typeof buildChain>>([])
   const workflowStepUsageRef = useRef<Map<number, import('@orchestra/shared').TokenUsage>>(new Map())
+  const workflowStepMsgsRef = useRef<Map<number, ChatMessage[]>>(new Map())
 
   // Listen for chain socket events to update workflow log
   const chainListenersAttachedRef = useRef(false)
@@ -800,20 +802,35 @@ export default function Home() {
           timestamp: new Date(),
         },
       ])
+      // Update canvas node status to running
+      setNodes((prev) => prev.map((n) =>
+        n.id === data.agentId ? { ...n, data: { ...n.data, status: 'running' } } : n,
+      ))
+      // Init step messages collection
+      workflowStepMsgsRef.current.set(data.stepIndex, [])
     })
 
     // Streaming text — merge partial text into a single entry per step
     socket.on('chain:step_text', (data: { chainId: string; stepIndex: number; agentId: string; content: string; partial: boolean }) => {
       if (data.chainId !== workflowChainIdRef.current) return
 
+      // Collect ChatMessages for step history
+      const stepMsgs = workflowStepMsgsRef.current.get(data.stepIndex) ?? []
+      const lastMsg = stepMsgs[stepMsgs.length - 1]
+      if (lastMsg && lastMsg.role === 'assistant' && lastMsg.partial) {
+        lastMsg.content += data.content
+        lastMsg.partial = data.partial
+      } else {
+        stepMsgs.push({ id: crypto.randomUUID(), role: 'assistant', content: data.content, timestamp: new Date(), partial: data.partial })
+      }
+      workflowStepMsgsRef.current.set(data.stepIndex, stepMsgs)
+
       setWorkflowLog((prev) => {
-        // Find the last step_text entry for this stepIndex
         const lastIdx = prev.findLastIndex(
           (e) => e.type === 'step_text' && e.stepIndex === data.stepIndex,
         )
 
         if (lastIdx >= 0 && prev[lastIdx]!.partial) {
-          // Append to existing partial entry
           const existing = prev[lastIdx]!
           return [
             ...prev.slice(0, lastIdx),
@@ -826,7 +843,6 @@ export default function Home() {
           ]
         }
 
-        // Create new text entry
         return [
           ...prev,
           {
@@ -848,6 +864,11 @@ export default function Home() {
       const step = steps[data.stepIndex]
       const agentName = step?.agentName ?? `Agent ${data.stepIndex + 1}`
 
+      // Collect for step history
+      const stepMsgs = workflowStepMsgsRef.current.get(data.stepIndex) ?? []
+      stepMsgs.push({ id: data.id, role: 'tool', content: data.toolName, toolUse: { toolName: data.toolName, input: data.input }, timestamp: new Date() })
+      workflowStepMsgsRef.current.set(data.stepIndex, stepMsgs)
+
       setWorkflowLog((prev) => [
         ...prev,
         {
@@ -865,6 +886,13 @@ export default function Home() {
     // Tool result — update matching tool_use entry with output
     socket.on('chain:step_tool_result', (data: { chainId: string; stepIndex: number; agentId: string; toolName: string; output: unknown; toolUseId: string }) => {
       if (data.chainId !== workflowChainIdRef.current) return
+
+      // Update step history tool message
+      const stepMsgs = workflowStepMsgsRef.current.get(data.stepIndex) ?? []
+      const toolMsg = stepMsgs.find((m) => m.role === 'tool' && m.id === data.toolUseId)
+      if (toolMsg?.toolUse) {
+        toolMsg.toolUse.output = data.output
+      }
 
       setWorkflowLog((prev) => {
         const toolIdx = prev.findIndex(
@@ -897,31 +925,57 @@ export default function Home() {
       const agentName = step?.agentName ?? `Agent ${data.stepIndex + 1}`
       const usage = workflowStepUsageRef.current.get(data.stepIndex)
 
-      setWorkflowLog((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          type: 'step_complete' as const,
-          content: data.output,
-          agentName,
-          stepIndex: data.stepIndex,
-          usage,
-          timestamp: new Date(),
-        },
-      ])
+      setWorkflowLog((prev) => {
+        // Mark the step_start entry as completed (stops spinner)
+        const updated = prev.map((entry) =>
+          entry.type === 'step_start' && entry.stepIndex === data.stepIndex
+            ? { ...entry, completed: true }
+            : entry,
+        )
+        // Append the step_complete entry with output
+        return [
+          ...updated,
+          {
+            id: crypto.randomUUID(),
+            type: 'step_complete' as const,
+            content: data.output,
+            agentName,
+            stepIndex: data.stepIndex,
+            usage,
+            timestamp: new Date(),
+          },
+        ]
+      })
+      // Update canvas node status back to idle
+      setNodes((prev) => prev.map((n) =>
+        n.id === data.agentId ? { ...n, data: { ...n.data, status: 'idle' } } : n,
+      ))
     })
 
     socket.on('chain:complete', (data: { chainId: string; totalSteps: number }) => {
       if (data.chainId !== workflowChainIdRef.current) return
       setWorkflowRunning(false)
       setWorkflowStep(null)
+
+      // Calculate total usage across all steps
+      let totalIn = 0
+      let totalOut = 0
+      let totalCost = 0
+      workflowStepUsageRef.current.forEach((u) => {
+        totalIn += u.inputTokens
+        totalOut += u.outputTokens
+        totalCost += u.estimatedCostUsd ?? 0
+      })
+      const totalUsage = totalIn > 0 ? { inputTokens: totalIn, outputTokens: totalOut, estimatedCostUsd: totalCost } : undefined
       workflowStepUsageRef.current.clear()
+
       setWorkflowLog((prev) => [
         ...prev,
         {
           id: crypto.randomUUID(),
           type: 'chain_complete' as const,
           content: `Completed ${data.totalSteps} steps`,
+          usage: totalUsage,
           timestamp: new Date(),
         },
       ])
@@ -1510,6 +1564,22 @@ export default function Home() {
             onStop={handleStopWorkflow}
             onModeChange={setWorkflowMode}
             onClearLog={handleClearWorkflowLog}
+            onStepClick={(stepIndex) => {
+              const steps = workflowStepsRef.current
+              const step = steps[stepIndex]
+              if (!step) return
+              const msgs = workflowStepMsgsRef.current.get(stepIndex) ?? []
+              if (msgs.length === 0) return
+              // Inject into agent chat cache and open
+              injectMessagesIntoCache(step.nodeId, msgs)
+              setSelectedAgent({
+                id: step.nodeId,
+                name: step.agentName,
+                status: 'idle' as AgentStatus,
+                model: step.model,
+              })
+              setChatOpen(true)
+            }}
           />
         </SheetContent>
       </Sheet>

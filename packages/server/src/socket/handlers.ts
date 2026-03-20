@@ -945,6 +945,21 @@ async function handleChainExecute(
     const executor = new ChainExecutor()
     socketActiveChains.set(chainId, executor)
 
+    // Persist chain run to DB
+    const stepCount = data.definition.steps.length
+    await prisma.chainRun.create({
+      data: {
+        chainId,
+        workspaceId: data.workspaceId ?? null,
+        initialMessage: data.initialMessage.slice(0, 5000),
+        totalSteps: stepCount,
+        status: 'running',
+      },
+    }).catch(() => {}) // Non-fatal if DB write fails
+
+    // Track per-step usage for DB persistence
+    const stepUsageMap = new Map<number, { tokensIn: number; tokensOut: number; costUsd: number }>()
+
     executor.on('step_start', (stepData) => {
       io.emit('chain:step_start', {
         chainId,
@@ -957,6 +972,15 @@ async function handleChainExecute(
         level: 'info',
         title: `Chain step ${stepData.stepIndex} started (agent ${stepData.agentId})`,
       })
+      // Create step record in DB
+      prisma.chainStepResult.create({
+        data: {
+          chainRun: { connect: { chainId } },
+          stepIndex: stepData.stepIndex,
+          agentId: stepData.agentId,
+          status: 'running',
+        },
+      }).catch(() => {})
     })
 
     executor.on('step_text', (stepData) => {
@@ -973,20 +997,40 @@ async function handleChainExecute(
 
     executor.on('step_usage', (stepData) => {
       io.emit('chain:step_usage', { chainId, ...stepData })
+      stepUsageMap.set(stepData.stepIndex, {
+        tokensIn: stepData.usage.inputTokens,
+        tokensOut: stepData.usage.outputTokens,
+        costUsd: stepData.usage.estimatedCostUsd ?? 0,
+      })
     })
 
     executor.on('step_complete', (stepData) => {
+      const output = typeof stepData.output === 'string' ? stepData.output : JSON.stringify(stepData.output ?? '')
       io.emit('chain:step_complete', {
         chainId,
         stepIndex: stepData.stepIndex,
         agentId: stepData.agentId,
-        output: typeof stepData.output === 'string' ? stepData.output : JSON.stringify(stepData.output ?? ''),
+        output,
       })
       io.emit('notification', {
         id: `chain-step-done-${chainId}-${stepData.stepIndex}`,
         level: 'info',
         title: `Chain step ${stepData.stepIndex} completed`,
       })
+      // Update step record in DB
+      const usage = stepUsageMap.get(stepData.stepIndex)
+      prisma.chainStepResult.updateMany({
+        where: {
+          chainRun: { chainId },
+          stepIndex: stepData.stepIndex,
+        },
+        data: {
+          output: output.slice(0, 50000),
+          status: 'completed',
+          completedAt: new Date(),
+          ...(usage ?? {}),
+        },
+      }).catch(() => {})
     })
 
     executor.on('chain_complete', (completeData) => {
@@ -1000,6 +1044,11 @@ async function handleChainExecute(
         level: 'info',
         title: `Chain ${chainId} completed (${completeData.outputs.size} steps)`,
       })
+      // Update chain run in DB
+      prisma.chainRun.update({
+        where: { chainId },
+        data: { status: 'completed', completedAt: new Date() },
+      }).catch(() => {})
     })
 
     executor.on('error', (errData) => {
@@ -1013,6 +1062,14 @@ async function handleChainExecute(
         level: 'error',
         title: `Chain step ${errData.stepIndex} failed: ${errData.error.slice(0, 80)}`,
       })
+      // Mark step as failed in DB
+      prisma.chainStepResult.updateMany({
+        where: {
+          chainRun: { chainId },
+          stepIndex: errData.stepIndex,
+        },
+        data: { status: 'failed', completedAt: new Date() },
+      }).catch(() => {})
     })
 
     executor.execute(data.definition as ChainDefinition, data.initialMessage, {
@@ -1026,6 +1083,11 @@ async function handleChainExecute(
         error: err instanceof Error ? err.message : 'Chain execution failed',
         type: 'PROCESS_ERROR',
       })
+      // Mark chain as failed in DB
+      prisma.chainRun.update({
+        where: { chainId },
+        data: { status: 'failed', completedAt: new Date() },
+      }).catch(() => {})
     })
   } catch (err) {
     socketActiveChains.delete(chainId)

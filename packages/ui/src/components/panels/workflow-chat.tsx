@@ -53,6 +53,7 @@ export interface WorkflowLogEntry {
   readonly stepIndex?: number
   readonly timestamp: Date
   readonly partial?: boolean
+  readonly completed?: boolean
   readonly toolUse?: ToolCardData
   readonly cwd?: string
   readonly usage?: TokenUsage
@@ -70,11 +71,12 @@ export interface WorkflowChatProps {
   readonly onStop: () => void
   readonly onModeChange: (mode: AgentMode) => void
   readonly onClearLog: () => void
+  readonly onStepClick?: (stepIndex: number) => void
 }
 
 // ─── Log entry component ────────────────────────────────────────────────────
 
-function LogEntry({ entry }: { readonly entry: WorkflowLogEntry }) {
+function LogEntry({ entry, onStepClick }: { readonly entry: WorkflowLogEntry; readonly onStepClick?: (stepIndex: number) => void }) {
   if (entry.type === 'user') {
     return (
       <div className="flex justify-end" role="listitem">
@@ -92,9 +94,13 @@ function LogEntry({ entry }: { readonly entry: WorkflowLogEntry }) {
     return (
       <div role="listitem">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="h-3 w-3 animate-spin text-primary" aria-hidden />
+          {entry.completed ? (
+            <CheckCircle2 className="h-3 w-3 text-green-500" aria-hidden />
+          ) : (
+            <Loader2 className="h-3 w-3 animate-spin text-primary" aria-hidden />
+          )}
           <span>
-            Step {(entry.stepIndex ?? 0) + 1}: Running{' '}
+            Step {(entry.stepIndex ?? 0) + 1}: {entry.completed ? '' : 'Running '}
             <span className="font-medium text-foreground">{entry.agentName}</span>
           </span>
         </div>
@@ -132,8 +138,14 @@ function LogEntry({ entry }: { readonly entry: WorkflowLogEntry }) {
   // step_tool_result is handled by updating the tool_use entry, not rendered separately
 
   if (entry.type === 'step_complete') {
+    const clickable = onStepClick && entry.stepIndex !== undefined
     return (
-      <div className="flex items-start gap-2" role="listitem">
+      <div
+        className={cn('flex items-start gap-2', clickable && 'cursor-pointer rounded-md px-1 -mx-1 hover:bg-muted/50 transition-colors')}
+        role="listitem"
+        onClick={clickable ? () => onStepClick(entry.stepIndex!) : undefined}
+        title={clickable ? 'Click to view full agent conversation' : undefined}
+      >
         <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-500" aria-hidden />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -164,6 +176,14 @@ function LogEntry({ entry }: { readonly entry: WorkflowLogEntry }) {
       <div className="flex items-center gap-2 rounded-md bg-green-500/10 px-3 py-2 text-xs text-green-400" role="listitem">
         <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
         <span className="font-medium">Workflow completed</span>
+        {entry.usage && (
+          <span className="text-green-400/70">
+            &middot; {(entry.usage.inputTokens + entry.usage.outputTokens).toLocaleString()} tokens
+            {entry.usage.estimatedCostUsd !== undefined && entry.usage.estimatedCostUsd > 0 && (
+              <> &middot; ${entry.usage.estimatedCostUsd.toFixed(4)}</>
+            )}
+          </span>
+        )}
       </div>
     )
   }
@@ -199,6 +219,7 @@ export function WorkflowChat({
   onStop,
   onModeChange,
   onClearLog,
+  onStepClick,
 }: WorkflowChatProps) {
   const [value, setValue] = useState('')
   const [dirExpanded, setDirExpanded] = useState(false)
@@ -396,7 +417,7 @@ export function WorkflowChat({
         ) : (
           <>
             {log.map((entry) => (
-              <LogEntry key={entry.id} entry={entry} />
+              <LogEntry key={entry.id} entry={entry} onStepClick={onStepClick} />
             ))}
             <div ref={bottomRef} aria-hidden />
           </>
