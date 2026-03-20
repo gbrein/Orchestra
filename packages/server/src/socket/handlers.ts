@@ -282,7 +282,7 @@ export function registerSocketHandlers(
       void handleAgentSetMode(socket, io, processManager, approvalManager, data)
     })
 
-    socket.on('chain:execute', (data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string }) => {
+    socket.on('chain:execute', (data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string; workspaceId?: string }) => {
       void handleChainExecute(socket, io, data)
     })
 

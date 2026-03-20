@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { apiGet } from '@/lib/api'
 import {
+  FolderOpen,
   GitBranch,
   RefreshCw,
   X,
@@ -43,6 +45,21 @@ export function GitPanel({ open, onOpenChange, workspaceId }: GitPanelProps) {
   const [commitMsg, setCommitMsg] = useState('')
   const [committing, setCommitting] = useState(false)
   const [pushing, setPushing] = useState(false)
+
+  const [targetDir, setTargetDir] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open || !workspaceId) {
+      setTargetDir(null)
+      return
+    }
+    apiGet<Array<{ id: string; workingDirectory?: string | null }>>('/api/workspaces')
+      .then((ws) => {
+        const match = ws.find((w) => w.id === workspaceId)
+        setTargetDir(match?.workingDirectory ?? null)
+      })
+      .catch(() => {})
+  }, [open, workspaceId])
 
   const {
     status, log, branches,
@@ -134,6 +151,14 @@ export function GitPanel({ open, onOpenChange, workspaceId }: GitPanelProps) {
             </Button>
           </div>
         </header>
+
+        {/* Target directory */}
+        <div className="flex shrink-0 items-center gap-1.5 border-b border-border px-4 py-1.5 text-[10px] text-muted-foreground">
+          <FolderOpen className="h-3 w-3 shrink-0 text-amber-400" aria-hidden />
+          <span className="truncate font-mono">
+            {targetDir || 'Server directory (default)'}
+          </span>
+        </div>
 
         {/* Error banner */}
         {error && (

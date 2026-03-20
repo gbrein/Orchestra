@@ -42,7 +42,7 @@ import { WorkspacePlanEditor } from '@/components/panels/workspace-plan-editor'
 import { GitPanel } from '@/components/panels/git-panel'
 import { CostDashboard } from '@/components/panels/cost-dashboard'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
-import { apiGet } from '@/lib/api'
+import { apiGet, apiPatch } from '@/lib/api'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { ComplexityContext, useComplexityState } from '@/hooks/use-complexity'
 import { useSocket } from '@/hooks/use-socket'
@@ -112,6 +112,7 @@ export default function Home() {
   const [workflowChatOpen, setWorkflowChatOpen] = useState(false)
   const [workflowLog, setWorkflowLog] = useState<WorkflowLogEntry[]>([])
   const [workflowMode, setWorkflowMode] = useState<import('@orchestra/shared').AgentMode>('default')
+  const [workspaceWorkingDir, setWorkspaceWorkingDir] = useState<string | null>(null)
   const [createAgentOpen, setCreateAgentOpen] = useState(false)
   const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
@@ -149,6 +150,32 @@ export default function Home() {
     loadCanvas, saveCanvas, switchWorkspace, createWorkspace,
     renameWorkspace, deleteWorkspace,
   } = useCanvasPersistence()
+
+  // Fetch workspace workingDirectory when workspace changes
+  useEffect(() => {
+    if (!activeWorkspaceId) {
+      setWorkspaceWorkingDir(null)
+      return
+    }
+    apiGet<Array<{ id: string; workingDirectory?: string | null }>>('/api/workspaces')
+      .then((ws) => {
+        const match = ws.find((w) => w.id === activeWorkspaceId)
+        setWorkspaceWorkingDir(match?.workingDirectory ?? null)
+      })
+      .catch(() => {})
+  }, [activeWorkspaceId])
+
+  const handleWorkingDirectoryChange = useCallback(async (dir: string | null) => {
+    if (!activeWorkspaceId) return
+    try {
+      await apiPatch(`/api/workspaces/${activeWorkspaceId}`, {
+        workingDirectory: dir,
+      })
+      setWorkspaceWorkingDir(dir)
+    } catch (err) {
+      console.error('Failed to save working directory:', err)
+    }
+  }, [activeWorkspaceId])
 
   const handleAgentStatusChange = useCallback((agentId: string, status: import('@orchestra/shared').AgentStatus) => {
     setNodes((prev) =>
@@ -610,7 +637,7 @@ export default function Home() {
     setGitPanelOpen(true)
   }, [])
 
-  const handleRunWorkflow = useCallback((message: string) => {
+  const handleRunWorkflow = useCallback(async (message: string) => {
     const chain = buildChain(nodes, edges)
     if (chain.length < 2) {
       setWorkflowLog((prev) => [
@@ -630,6 +657,34 @@ export default function Home() {
     const sock = getSocket()
     if (!sock.connected) {
       sock.connect()
+      // Give socket a moment to connect before emitting
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('timeout'))
+        }, 3000)
+        sock.once('connect', () => {
+          clearTimeout(timeout)
+          resolve()
+        })
+        // If already connected by the time listener fires
+        if (sock.connected) {
+          clearTimeout(timeout)
+          resolve()
+        }
+      }).catch(() => {
+        setWorkflowLog((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            type: 'error' as const,
+            content: 'Cannot connect to server. Make sure the backend is running on port 3001.',
+            timestamp: new Date(),
+          },
+        ])
+        return
+      })
+      // If we returned from the catch, don't continue
+      if (!sock.connected) return
     }
 
     const chainId = crypto.randomUUID()
@@ -1448,6 +1503,8 @@ export default function Home() {
             isRunning={workflowRunning}
             log={workflowLog}
             mode={workflowMode}
+            workingDirectory={workspaceWorkingDir}
+            onWorkingDirectoryChange={(dir) => void handleWorkingDirectoryChange(dir)}
             onSendMessage={handleWorkflowSendMessage}
             onRun={handleRunWorkflow}
             onStop={handleStopWorkflow}

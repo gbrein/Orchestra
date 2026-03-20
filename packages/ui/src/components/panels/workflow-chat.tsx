@@ -9,10 +9,14 @@ import {
 } from 'react'
 import {
   Bot,
+  Check,
+  ChevronDown,
+  ChevronUp,
   FolderOpen,
   GitBranch,
   Loader2,
   Play,
+  Save,
   Send,
   Square,
   Trash2,
@@ -20,6 +24,7 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -57,6 +62,8 @@ export interface WorkflowChatProps {
   readonly isRunning: boolean
   readonly log: readonly WorkflowLogEntry[]
   readonly mode: AgentMode
+  readonly workingDirectory?: string | null
+  readonly onWorkingDirectoryChange?: (dir: string | null) => void
   readonly onSendMessage: (message: string) => void
   readonly onRun: (message: string) => void
   readonly onStop: () => void
@@ -184,6 +191,8 @@ export function WorkflowChat({
   isRunning,
   log,
   mode,
+  workingDirectory,
+  onWorkingDirectoryChange,
   onSendMessage,
   onRun,
   onStop,
@@ -191,8 +200,17 @@ export function WorkflowChat({
   onClearLog,
 }: WorkflowChatProps) {
   const [value, setValue] = useState('')
+  const [dirExpanded, setDirExpanded] = useState(false)
+  const [dirInput, setDirInput] = useState(workingDirectory ?? '')
+  const [dirSaving, setDirSaving] = useState(false)
+  const [dirSaved, setDirSaved] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  // Sync dirInput when workingDirectory prop changes
+  useEffect(() => {
+    setDirInput(workingDirectory ?? '')
+  }, [workingDirectory])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -276,6 +294,63 @@ export function WorkflowChat({
               )}
             </div>
           ))}
+        </div>
+
+        {/* Working Directory */}
+        <div className="mt-2 border-t border-border pt-2">
+          <button
+            type="button"
+            className="flex w-full items-center gap-1.5 text-left text-xs hover:text-foreground transition-colors"
+            onClick={() => setDirExpanded((prev) => !prev)}
+          >
+            <FolderOpen className="h-3 w-3 shrink-0 text-amber-400" aria-hidden />
+            <span className="flex-1 truncate font-mono text-muted-foreground">
+              {workingDirectory || 'No project folder configured'}
+            </span>
+            {dirExpanded ? (
+              <ChevronUp className="h-3 w-3 text-muted-foreground" aria-hidden />
+            ) : (
+              <ChevronDown className="h-3 w-3 text-muted-foreground" aria-hidden />
+            )}
+          </button>
+          {dirExpanded && (
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <Input
+                value={dirInput}
+                onChange={(e) => {
+                  setDirInput(e.target.value)
+                  setDirSaved(false)
+                }}
+                placeholder="/path/to/your/project"
+                className="h-7 flex-1 font-mono text-xs"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 w-7 shrink-0 p-0"
+                disabled={dirSaving || (dirInput === (workingDirectory ?? ''))}
+                onClick={async () => {
+                  setDirSaving(true)
+                  try {
+                    onWorkingDirectoryChange?.(dirInput.trim() || null)
+                    setDirSaved(true)
+                    setTimeout(() => setDirSaved(false), 2000)
+                  } finally {
+                    setDirSaving(false)
+                  }
+                }}
+                aria-label="Save working directory"
+              >
+                {dirSaving ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : dirSaved ? (
+                  <Check className="h-3 w-3 text-green-500" />
+                ) : (
+                  <Save className="h-3 w-3" />
+                )}
+              </Button>
+            </div>
+          )}
         </div>
       </header>
 
