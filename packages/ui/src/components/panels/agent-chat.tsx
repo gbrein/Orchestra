@@ -569,18 +569,6 @@ export function AgentChat({
               Clear
             </Button>
           </div>
-          {isStreaming && (
-            <Button
-              size="sm"
-              variant="destructive"
-              className="h-7 gap-1.5 px-2 text-xs"
-              onClick={stopAgent}
-              aria-label="Stop running agent"
-            >
-              <Square className="h-3 w-3 fill-current" aria-hidden />
-              Stop
-            </Button>
-          )}
         </div>
       </header>
 

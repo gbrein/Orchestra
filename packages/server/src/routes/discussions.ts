@@ -278,7 +278,7 @@ export async function discussionRoutes(app: FastifyInstance) {
       if (!table) throw new NotFoundError('Discussion', tableId)
 
       // Find the most recent session for this table
-      const session = await prisma.session.findFirst({
+      const session = await prisma.agentSession.findFirst({
         where: { tableId },
         orderBy: { startedAt: 'desc' },
         include: {

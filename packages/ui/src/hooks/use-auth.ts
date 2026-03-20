@@ -58,14 +58,10 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
   // Check session on mount
   useEffect(() => {
     getSession()
-      .then((res) => {
-        if (res.data?.user) {
-          setUser({
-            id: res.data.user.id,
-            email: res.data.user.email,
-            name: res.data.user.name,
-            image: res.data.user.image,
-          })
+      .then((res: any) => {
+        const u = res?.data?.user
+        if (u) {
+          setUser({ id: u.id, email: u.email, name: u.name, image: u.image ?? null })
         }
       })
       .catch(() => {
@@ -78,19 +74,14 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
     setError(null)
     setLoading(true)
     try {
-      const res = await authSignIn(email, password)
+      const res: any = await authSignIn(email, password)
       if (res.error) {
         setError(res.error.message ?? 'Sign in failed')
         return
       }
-      const data = res.data
-      if (data && 'user' in data && data.user) {
-        setUser({
-          id: data.user.id,
-          email: data.user.email,
-          name: data.user.name,
-          image: data.user.image ?? null,
-        })
+      const u = res.data?.user
+      if (u) {
+        setUser({ id: u.id, email: u.email, name: u.name, image: u.image ?? null })
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign in failed')
@@ -103,19 +94,14 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
     setError(null)
     setLoading(true)
     try {
-      const res = await authSignUp(email, password, name)
+      const res: any = await authSignUp(email, password, name)
       if (res.error) {
         setError(res.error.message ?? 'Sign up failed')
         return
       }
-      const data = res.data
-      if (data && 'user' in data && data.user) {
-        setUser({
-          id: data.user.id,
-          email: data.user.email,
-          name: data.user.name,
-          image: data.user.image ?? null,
-        })
+      const u = res.data?.user
+      if (u) {
+        setUser({ id: u.id, email: u.email, name: u.name, image: u.image ?? null })
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign up failed')

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost, apiPatch, apiDelete, apiUpload } from '@/lib/api'
+import type { WorkspaceResource as SharedResource } from '@orchestra/shared'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,82 @@ export interface UseResourcesReturn {
   deleteResource: (id: string) => Promise<void>
 }
 
+// ─── Mapping helpers ──────────────────────────────────────────────────────
+
+/** Map backend ResourceType → frontend ResourceKind */
+function typeToKind(type: string): ResourceKind {
+  if (type === 'url') return 'link'
+  return type as ResourceKind
+}
+
+/** Map backend SharedResource → frontend WorkspaceResource */
+function fromApi(r: SharedResource): WorkspaceResource {
+  let value = ''
+  if (r.type === 'file') {
+    // Build a download URL for file resources
+    value = `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/api/workspaces/${r.workspaceId}/resources/${r.id}/download`
+  } else if (r.type === 'url') {
+    value = r.url ?? ''
+  } else if (r.type === 'note') {
+    value = r.content ?? ''
+  } else if (r.type === 'variable') {
+    value = r.varKey ?? ''
+  }
+
+  return {
+    id: r.id,
+    workspaceId: r.workspaceId,
+    kind: typeToKind(r.type),
+    name: r.name,
+    value,
+    mimeType: r.mimeType ?? undefined,
+    size: r.fileSize ?? undefined,
+    secret: r.isSecret || undefined,
+    description: r.description ?? undefined,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  }
+}
+
+/** Map frontend CreateResourceInput → backend POST body */
+function toApiBody(input: CreateResourceInput): Record<string, unknown> {
+  const backendType = input.kind === 'link' ? 'url' : input.kind
+  const body: Record<string, unknown> = {
+    type: backendType,
+    name: input.name,
+    description: input.description,
+  }
+
+  if (input.kind === 'link') {
+    body.url = input.value
+  } else if (input.kind === 'note') {
+    body.content = input.value
+  } else if (input.kind === 'variable') {
+    body.varKey = input.name
+    body.varValue = input.value
+    body.isSecret = input.secret ?? false
+  }
+
+  return body
+}
+
+/** Map frontend partial update → backend PATCH body */
+function toApiUpdateBody(input: Partial<CreateResourceInput>): Record<string, unknown> {
+  const body: Record<string, unknown> = {}
+  if (input.name !== undefined) body.name = input.name
+  if (input.description !== undefined) body.description = input.description
+  if (input.value !== undefined) {
+    // For notes, map value → content; for variables, map value → varValue
+    // The caller doesn't know the resource type, so we send all possible fields
+    // and the backend ignores fields that don't apply
+    body.content = input.value
+    body.varValue = input.value
+    body.url = input.value
+  }
+  if (input.secret !== undefined) body.isSecret = input.secret
+  return body
+}
+
 // ─── Hook ──────────────────────────────────────────────────────────────────
 
 export function useResources(workspaceId: string | null): UseResourcesReturn {
@@ -54,10 +131,10 @@ export function useResources(workspaceId: string | null): UseResourcesReturn {
     setLoading(true)
     setError(null)
     try {
-      const data = await apiGet<WorkspaceResource[]>(
+      const data = await apiGet<SharedResource[]>(
         `/api/workspaces/${workspaceId}/resources`,
       )
-      setResources(data)
+      setResources(data.map(fromApi))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load resources')
     } finally {
@@ -74,12 +151,12 @@ export function useResources(workspaceId: string | null): UseResourcesReturn {
       if (!workspaceId) return
       setError(null)
       try {
-        const created = await apiUpload<WorkspaceResource>(
+        const created = await apiUpload<SharedResource>(
           `/api/workspaces/${workspaceId}/resources/upload`,
           file,
           { workspaceId },
         )
-        setResources((prev) => [...prev, created])
+        setResources((prev) => [...prev, fromApi(created)])
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Upload failed')
         throw err
@@ -93,11 +170,11 @@ export function useResources(workspaceId: string | null): UseResourcesReturn {
       if (!workspaceId) return
       setError(null)
       try {
-        const created = await apiPost<WorkspaceResource>(
+        const created = await apiPost<SharedResource>(
           `/api/workspaces/${workspaceId}/resources`,
-          { ...input, workspaceId },
+          toApiBody(input),
         )
-        setResources((prev) => [...prev, created])
+        setResources((prev) => [...prev, fromApi(created)])
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to create resource')
         throw err
@@ -111,12 +188,12 @@ export function useResources(workspaceId: string | null): UseResourcesReturn {
       if (!workspaceId) return
       setError(null)
       try {
-        const updated = await apiPatch<WorkspaceResource>(
+        const updated = await apiPatch<SharedResource>(
           `/api/workspaces/${workspaceId}/resources/${id}`,
-          input,
+          toApiUpdateBody(input),
         )
         setResources((prev) =>
-          prev.map((r) => (r.id === id ? updated : r)),
+          prev.map((r) => (r.id === id ? fromApi(updated) : r)),
         )
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to update resource')

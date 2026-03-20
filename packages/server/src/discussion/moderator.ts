@@ -117,7 +117,7 @@ export class ModeratorEngine extends EventEmitter {
     }
 
     // Create a DB session to attach all messages to
-    const session = await prisma.session.create({
+    const session = await prisma.agentSession.create({
       data: { tableId: this.tableId },
     })
     this.sessionId = session.id
@@ -446,7 +446,7 @@ export class ModeratorEngine extends EventEmitter {
       })
 
       if (this.sessionId) {
-        await prisma.session.update({
+        await prisma.agentSession.update({
           where: { id: this.sessionId },
           data: { endedAt: new Date() },
         })

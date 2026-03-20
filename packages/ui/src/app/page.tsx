@@ -41,6 +41,7 @@ import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { ComplexityContext, useComplexityState } from '@/hooks/use-complexity'
 import { useSocket } from '@/hooks/use-socket'
 import { useCanvasPersistence } from '@/hooks/use-canvas-persistence'
+import { useAgentStatus } from '@/hooks/use-agent-status'
 import { useNotifications } from '@/hooks/use-notifications'
 import { useApprovals } from '@/hooks/use-approvals'
 import type { AgentNodeData } from '@/lib/canvas-utils'
@@ -133,7 +134,18 @@ export default function Home() {
   const {
     workspaces, activeWorkspaceId, loaded: canvasLoaded,
     loadCanvas, saveCanvas, switchWorkspace, createWorkspace,
+    renameWorkspace, deleteWorkspace,
   } = useCanvasPersistence()
+
+  const handleAgentStatusChange = useCallback((agentId: string, status: import('@orchestra/shared').AgentStatus) => {
+    setNodes((prev) =>
+      prev.map((n) =>
+        n.id === agentId ? { ...n, data: { ...n.data, status } } : n,
+      ),
+    )
+  }, [])
+
+  const { sessionTokens } = useAgentStatus(handleAgentStatusChange)
 
   const handleSettingsClose = useCallback((open: boolean) => {
     setSettingsOpen(open)
@@ -431,6 +443,21 @@ export default function Home() {
     setActiveTab('workspace')
   }, [nodes, edges, saveCanvas, createWorkspace])
 
+  const handleRenameWorkspace = useCallback(async (id: string, name: string) => {
+    await renameWorkspace(id, name)
+  }, [renameWorkspace])
+
+  const handleDeleteWorkspace = useCallback(async (id: string) => {
+    await deleteWorkspace(id)
+    // Load canvas for the new active workspace
+    const remaining = workspaces.filter((w) => w.id !== id)
+    if (remaining.length > 0) {
+      const data = await switchWorkspace(remaining[0].id)
+      setNodes(data?.nodes ?? [])
+      setEdges(data?.edges ?? [])
+    }
+  }, [deleteWorkspace, workspaces, switchWorkspace])
+
   const handleResourcesClick = useCallback(() => {
     setResourceBrowserOpen(true)
   }, [])
@@ -693,6 +720,8 @@ export default function Home() {
         onWorkspaceClick={goToWorkspace}
         onSelectWorkspace={handleSelectWorkspace}
         onCreateWorkspace={handleCreateWorkspace}
+        onRenameWorkspace={handleRenameWorkspace}
+        onDeleteWorkspace={handleDeleteWorkspace}
         onDiscussionsClick={handleTopBarDiscussionsClick}
         onHistoryClick={handleTopBarHistoryClick}
         onSettingsClick={handleSettingsClick}
@@ -749,6 +778,7 @@ export default function Home() {
         connecting={connecting}
         socketError={socketError}
         runningAgentCount={runningAgentCount}
+        sessionTokens={sessionTokens}
         zoomLevel={zoomLevel}
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
