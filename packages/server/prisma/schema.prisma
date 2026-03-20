@@ -198,6 +198,13 @@ model Memory {
   @@unique([agentId, key])
 }
 
+enum ResourceType {
+  file
+  url
+  note
+  variable
+}
+
 model Workspace {
   id        String   @id @default(uuid())
   name      String
@@ -205,6 +212,29 @@ model Workspace {
   updatedAt DateTime @updatedAt
 
   canvasLayouts CanvasLayout[]
+  resources     WorkspaceResource[]
+}
+
+model WorkspaceResource {
+  id          String       @id @default(uuid())
+  workspaceId String
+  type        ResourceType
+  name        String
+  description String?
+  filePath    String?
+  fileSize    Int?
+  mimeType    String?
+  url         String?
+  content     String?
+  varKey      String?
+  varValue    String?
+  isSecret    Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, type])
 }
 
 model CanvasLayout {

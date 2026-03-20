@@ -273,13 +273,13 @@ async function handleAgentStart(
   io: Server<ClientToServerEvents, ServerToClientEvents>,
   processManager: ProcessManager,
   approvalManager: ApprovalManager,
-  data: { agentId: string; message: string },
+  data: { agentId: string; message: string; workspaceId?: string },
 ): Promise<void> {
-  const { agentId, message } = data
+  const { agentId, message, workspaceId } = data
 
   try {
     // Build the spawn configuration from the DB
-    const config = await buildSpawnConfig(agentId)
+    const config = await buildSpawnConfig(agentId, workspaceId)
 
     // Resolve effective policy for this agent (no session yet — session policies
     // are applied after the Session record is created and passed in future calls)
@@ -319,6 +319,7 @@ async function handleAgentStart(
       // Policy overrides config: use the minimum budget
       maxBudgetUsd: minDefinedBudget(config.maxBudgetUsd, resolvedPolicy.maxBudgetUsd),
       env: config.env,
+      ...(config.addDirs && config.addDirs.length > 0 ? { addDirs: config.addDirs } : {}),
     })
   } catch (err) {
     const sessionId = agentSessionMap.get(agentId) ?? ''

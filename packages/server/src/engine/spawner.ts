@@ -15,6 +15,7 @@ export interface SpawnOptions {
   readonly maxBudgetUsd?: number
   readonly env?: Record<string, string>
   readonly mcpConfig?: MergedMcpConfig
+  readonly addDirs?: string[]
 }
 
 export interface StreamEvent {
@@ -221,6 +222,12 @@ export class ClaudeCodeSpawner extends EventEmitter {
       // Serialize only the mcpServers map — conflicts are internal metadata
       const serialized = JSON.stringify({ mcpServers: options.mcpConfig.mcpServers })
       args.push('--mcp-config', serialized)
+    }
+
+    if (options.addDirs?.length) {
+      for (const dir of options.addDirs) {
+        args.push('--add-dir', dir)
+      }
     }
 
     // The initial message is the final positional argument

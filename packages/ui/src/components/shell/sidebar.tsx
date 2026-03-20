@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Bot, Puzzle, Shield, MessageSquare, Plug, PanelLeftClose, PanelLeft, Plus, Home } from 'lucide-react'
+import { Bot, Puzzle, Shield, MessageSquare, Plug, PanelLeftClose, PanelLeft, Plus, Home, FolderOpen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -16,7 +16,7 @@ import { useComplexity } from '@/hooks/use-complexity'
 // Types
 // ---------------------------------------------------------------------------
 
-export type NodeType = 'agent' | 'skill' | 'safety' | 'discussion' | 'connection'
+export type NodeType = 'agent' | 'skill' | 'safety' | 'discussion' | 'connection' | 'resource'
 
 interface SidebarItem {
   readonly icon: React.ElementType
@@ -34,6 +34,7 @@ export interface SidebarProps {
   readonly onSafetyClick?: () => void
   readonly onDiscussionsClick?: () => void
   readonly onConnectionsClick?: () => void
+  readonly onResourcesClick?: () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,7 @@ const TIER_ORDER = { simple: 0, standard: 1, full: 2 } as const
 const ITEMS: readonly SidebarItem[] = [
   { icon: Bot, label: 'Assistants', shortcut: 'N', nodeType: 'agent', minTier: 'simple' },
   { icon: Puzzle, label: 'Skills', shortcut: 'S', nodeType: 'skill', minTier: 'simple' },
+  { icon: FolderOpen, label: 'Resources', shortcut: 'R', nodeType: 'resource', minTier: 'standard' },
   { icon: Shield, label: 'Safety Rules', nodeType: 'safety', minTier: 'standard' },
   { icon: MessageSquare, label: 'Discussions', nodeType: 'discussion', minTier: 'standard' },
   { icon: Plug, label: 'Connections', nodeType: 'connection', minTier: 'full' },
@@ -54,7 +56,7 @@ const ITEMS: readonly SidebarItem[] = [
 // Component
 // ---------------------------------------------------------------------------
 
-export function Sidebar({ onHomeClick, onCreateAgent, onAssistantsClick, onSkillsClick, onSafetyClick, onDiscussionsClick, onConnectionsClick }: SidebarProps) {
+export function Sidebar({ onHomeClick, onCreateAgent, onAssistantsClick, onSkillsClick, onSafetyClick, onDiscussionsClick, onConnectionsClick, onResourcesClick }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const { tier } = useComplexity()
   const visibleItems = ITEMS.filter((item) => TIER_ORDER[tier] >= TIER_ORDER[item.minTier])
@@ -132,6 +134,8 @@ export function Sidebar({ onHomeClick, onCreateAgent, onAssistantsClick, onSkill
                     ? onDiscussionsClick
                     : item.nodeType === 'connection'
                     ? onConnectionsClick
+                    : item.nodeType === 'resource'
+                    ? onResourcesClick
                     : undefined
                 }
                 aria-label={item.label}

@@ -13,6 +13,7 @@ import { CommandPalette } from '@/components/shell/command-palette'
 import type { CreateAgentInput } from '@orchestra/shared'
 import { createAgentNode } from '@/lib/canvas-utils'
 import { apiPost, apiDelete } from '@/lib/api'
+import { createResourceNode } from '@/lib/canvas-utils'
 import { OrchestraCanvas, type UndoRedoControls } from '@/components/canvas/orchestra-canvas'
 import { ShortcutOverlay } from '@/components/shell/shortcut-overlay'
 import { AgentChat } from '@/components/panels/agent-chat'
@@ -23,6 +24,7 @@ import { DiscussionPanel } from '@/components/panels/discussion-panel'
 import { DiscussionsList } from '@/components/panels/discussions-list'
 import { HistoryPanel } from '@/components/panels/history-panel'
 import { SettingsPanel } from '@/components/panels/settings-panel'
+import { ResourceBrowser } from '@/components/panels/resource-browser'
 import { McpManagement, type McpServer } from '@/components/panels/mcp-management'
 import { ChainConfig, type ChainStep, type ConditionalEdge } from '@/components/panels/chain-config'
 import { PrdEditor, type PrdData } from '@/components/panels/prd-editor'
@@ -66,6 +68,7 @@ export default function Home() {
   const [discussionPanelOpen, setDiscussionPanelOpen] = useState(false)
 
   // New panel states
+  const [resourceBrowserOpen, setResourceBrowserOpen] = useState(false)
   const [assistantsListOpen, setAssistantsListOpen] = useState(false)
   const [safetyPanelOpen, setSafetyPanelOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -393,6 +396,10 @@ export default function Home() {
     setActiveTab('workspace')
   }, [nodes, edges, saveCanvas, createWorkspace])
 
+  const handleResourcesClick = useCallback(() => {
+    setResourceBrowserOpen(true)
+  }, [])
+
   const handleAssistantsClick = useCallback(() => {
     setAssistantsListOpen(true)
   }, [])
@@ -475,6 +482,7 @@ export default function Home() {
     setHistoryOpen(false)
     setAssistantsListOpen(false)
     setSafetyPanelOpen(false)
+    setResourceBrowserOpen(false)
     setNodes((prev) =>
       prev.map((n) => ({ ...n, selected: false })),
     )
@@ -512,6 +520,11 @@ export default function Home() {
 
   const handleNodeDoubleClick = useCallback(
     (nodeId: string, nodeType: string) => {
+      if (nodeType === 'resource') {
+        setResourceBrowserOpen(true)
+        return
+      }
+
       if (nodeType !== 'agent') return
 
       const node = nodes.find((n) => n.id === nodeId)
@@ -638,6 +651,7 @@ export default function Home() {
           onSafetyClick={handleSafetyClick}
           onDiscussionsClick={handleSidebarDiscussionsClick}
           onConnectionsClick={handleConnectionsClick}
+          onResourcesClick={handleResourcesClick}
         />
         <main className="relative flex-1 overflow-hidden">
           <ErrorBoundary>
@@ -717,6 +731,15 @@ export default function Home() {
         <SettingsPanel
           open={settingsOpen}
           onOpenChange={handleSettingsClose}
+        />
+      </ErrorBoundary>
+
+      {/* Resource Browser */}
+      <ErrorBoundary>
+        <ResourceBrowser
+          open={resourceBrowserOpen}
+          onOpenChange={setResourceBrowserOpen}
+          workspaceId={activeWorkspaceId || null}
         />
       </ErrorBoundary>
 
@@ -806,9 +829,13 @@ export default function Home() {
                 agentPurpose={selectedAgent.purpose}
                 agentStatus={selectedAgent.status}
                 agentModel={selectedAgent.model}
+                workspaceId={activeWorkspaceId || null}
                 onEdit={() => {
                   setChatOpen(false)
                   setDrawerOpen(true)
+                }}
+                onManageResources={() => {
+                  setResourceBrowserOpen(true)
                 }}
               />
             ) : (

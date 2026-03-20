@@ -26,11 +26,20 @@ export interface PolicyNodeData extends Record<string, unknown> {
   level: 'global' | 'agent' | 'session'
 }
 
+export interface ResourceNodeData extends Record<string, unknown> {
+  label?: string
+  fileCount?: number
+  linkCount?: number
+  noteCount?: number
+  variableCount?: number
+}
+
 // ─── Typed node aliases ────────────────────────────────────────────────────
 
 export type AgentFlowNode = Node<AgentNodeData, 'agent'>
 export type SkillFlowNode = Node<SkillNodeData, 'skill'>
 export type PolicyFlowNode = Node<PolicyNodeData, 'policy'>
+export type ResourceFlowNode = Node<ResourceNodeData, 'resource'>
 
 // ─── Node factories ────────────────────────────────────────────────────────
 
@@ -56,6 +65,18 @@ export function createPolicyNode(position: XYPosition, data: PolicyNodeData): Po
   return {
     id: crypto.randomUUID(),
     type: 'policy',
+    position,
+    data,
+  }
+}
+
+export function createResourceNode(
+  position: XYPosition,
+  data: ResourceNodeData = {},
+): ResourceFlowNode {
+  return {
+    id: crypto.randomUUID(),
+    type: 'resource',
     position,
     data,
   }
@@ -116,6 +137,7 @@ export const DRAG_TYPES = {
   SKILL: 'application/orchestra-skill',
   POLICY: 'application/orchestra-policy',
   MCP: 'application/orchestra-mcp',
+  RESOURCE: 'application/orchestra-resource',
 } as const
 
 export type DragType = (typeof DRAG_TYPES)[keyof typeof DRAG_TYPES]

@@ -45,3 +45,25 @@ export async function apiDelete(path: string): Promise<void> {
   const json = await res.json()
   if (!json.success) throw new Error(json.error ?? 'API request failed')
 }
+
+export async function apiUpload<T>(
+  path: string,
+  file: File,
+  extraFields?: Record<string, string>,
+): Promise<T> {
+  const formData = new FormData()
+  formData.append('file', file)
+  if (extraFields) {
+    for (const [k, v] of Object.entries(extraFields)) {
+      formData.append(k, v)
+    }
+  }
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    body: formData,
+    // No Content-Type header — browser sets it with boundary for multipart
+  })
+  const json = await res.json()
+  if (!json.success) throw new Error(json.error ?? 'Upload failed')
+  return json.data as T
+}

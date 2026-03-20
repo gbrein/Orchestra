@@ -63,7 +63,10 @@ function classifyError(type: string, rawMessage: string): AgentChatError {
 
 // ─── Hook ──────────────────────────────────────────────────────────────────
 
-export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
+export function useAgentStream(
+  agentId: string | null,
+  workspaceId?: string | null,
+): UseAgentStreamReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isStreaming, setIsStreaming] = useState<boolean>(false)
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null)
@@ -72,13 +75,18 @@ export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
   const streamingMessageIdRef = useRef<string | null>(null)
   const listenersAttachedRef = useRef(false)
   const agentIdRef = useRef(agentId)
+  const workspaceIdRef = useRef(workspaceId)
 
-  // Keep agentId ref in sync
+  // Keep refs in sync
   useEffect(() => {
     agentIdRef.current = agentId
     // Reset listeners when agent changes so they reattach for the new agent
     listenersAttachedRef.current = false
   }, [agentId])
+
+  useEffect(() => {
+    workspaceIdRef.current = workspaceId
+  }, [workspaceId])
 
   // Attach socket listeners — called once when first message is sent
   const ensureListeners = useCallback(() => {
@@ -230,7 +238,11 @@ export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
         sock.once('connect', () => {
           clearTimeout(connectTimeout)
           setIsStreaming(true)
-          sock.emit('agent:start', { agentId, message: trimmed })
+          sock.emit('agent:start', {
+            agentId,
+            message: trimmed,
+            workspaceId: workspaceIdRef.current ?? undefined,
+          })
         })
         return
       }
@@ -239,7 +251,11 @@ export function useAgentStream(agentId: string | null): UseAgentStreamReturn {
         sock.emit('agent:message', { agentId, message: trimmed })
       } else {
         setIsStreaming(true)
-        sock.emit('agent:start', { agentId, message: trimmed })
+        sock.emit('agent:start', {
+          agentId,
+          message: trimmed,
+          workspaceId: workspaceIdRef.current ?? undefined,
+        })
       }
     },
     [agentId, isStreaming, ensureListeners],

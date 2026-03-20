@@ -1,5 +1,6 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
+import multipart from '@fastify/multipart'
 import { Server } from 'socket.io'
 import { createServer } from 'http'
 import type { ClientToServerEvents, ServerToClientEvents } from '@orchestra/shared'
@@ -13,6 +14,7 @@ import { canvasRoutes } from './routes/canvas'
 import { approvalRoutes } from './routes/approvals'
 import { mcpServerRoutes } from './routes/mcp-servers'
 import { loopRoutes, activeLoops, activeChains, activePipelines } from './routes/loops'
+import { resourceRoutes } from './routes/resources'
 import { ProcessManager } from './engine/process-manager'
 import { ApprovalManager } from './engine/approval-manager'
 import { registerSocketHandlers } from './socket/handlers'
@@ -58,6 +60,12 @@ async function main() {
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   })
 
+  await app.register(multipart, {
+    limits: {
+      fileSize: 50 * 1024 * 1024, // 50 MB — matches MAX_FILE_SIZE in file-storage.ts
+    },
+  })
+
   // Routes
   await app.register(agentRoutes)
   await app.register(skillRoutes)
@@ -68,6 +76,7 @@ async function main() {
   await app.register(approvalRoutes(approvalManager))
   await app.register(mcpServerRoutes)
   await app.register(loopRoutes)
+  await app.register(resourceRoutes)
 
   // Health check
   app.get('/api/health', async () => ({

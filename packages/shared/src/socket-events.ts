@@ -20,7 +20,7 @@ export interface ChainDefinition {
 
 // Client -> Server events
 export interface ClientToServerEvents {
-  'agent:start': (data: { agentId: string; message: string }) => void
+  'agent:start': (data: { agentId: string; message: string; workspaceId?: string }) => void
   'agent:stop': (data: { agentId: string }) => void
   'agent:message': (data: { agentId: string; message: string }) => void
   'approval:respond': (data: { agentId: string; approved: boolean; editedCommand?: string }) => void
