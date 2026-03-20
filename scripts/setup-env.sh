@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Generate .env files from .env.example with a random BETTER_AUTH_SECRET.
+# Generate root .env from .env.example with a random BETTER_AUTH_SECRET.
 # Skips if .env already exists (won't overwrite user config).
 
 set -euo pipefail
 
-SERVER_DIR="packages/server"
-ENV_FILE="$SERVER_DIR/.env"
-EXAMPLE_FILE="$SERVER_DIR/.env.example"
+ENV_FILE=".env"
+EXAMPLE_FILE=".env.example"
 
 if [ -f "$ENV_FILE" ]; then
   # .env exists — ensure BETTER_AUTH_SECRET is present
