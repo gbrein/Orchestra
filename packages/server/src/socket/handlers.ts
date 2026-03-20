@@ -80,7 +80,7 @@ export function registerSocketHandlers(
 
           void Promise.all([
             prisma.agent.update({ where: { id: agentId }, data: { status: 'error' } }),
-            prisma.session.update({ where: { id: sessionId }, data: { endedAt: new Date() } }),
+            prisma.agentSession.update({ where: { id: sessionId }, data: { endedAt: new Date() } }),
           ]).catch(() => { /* best-effort */ })
 
           return
@@ -181,7 +181,7 @@ export function registerSocketHandlers(
           where: { id: agentId },
           data: { status: 'idle' },
         }),
-        prisma.session.update({
+        prisma.agentSession.update({
           where: { id: sessionId },
           data: { endedAt: new Date() },
         }),
@@ -217,7 +217,7 @@ export function registerSocketHandlers(
           where: { id: agentId },
           data: { status: 'error' },
         }),
-        prisma.session.update({
+        prisma.agentSession.update({
           where: { id: sessionId },
           data: { endedAt: new Date() },
         }),
@@ -307,7 +307,7 @@ async function handleAgentStart(
     agentPolicyMap.set(agentId, resolvedPolicy)
 
     // Create a Session record in the DB
-    const session = await prisma.session.create({
+    const session = await prisma.agentSession.create({
       data: { agentId },
     })
 
@@ -402,7 +402,7 @@ function handleAgentStop(
       data: { status: 'idle' },
     }),
     sessionId
-      ? prisma.session.update({
+      ? prisma.agentSession.update({
           where: { id: sessionId },
           data: { endedAt: new Date() },
         })
@@ -487,7 +487,7 @@ async function handleAgentSetMode(
           where: { id: agentId },
           data: { status: 'idle' },
         }),
-        prisma.session.update({
+        prisma.agentSession.update({
           where: { id: sessionId },
           data: { endedAt: new Date() },
         }),

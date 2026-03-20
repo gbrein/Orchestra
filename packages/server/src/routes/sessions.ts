@@ -16,7 +16,7 @@ export async function sessionRoutes(app: FastifyInstance) {
       const skip = (query.page - 1) * query.limit
 
       const [sessions, total] = await Promise.all([
-        prisma.session.findMany({
+        prisma.agentSession.findMany({
           where: {
             ...(query.agentId !== undefined && { agentId: query.agentId }),
           },
@@ -27,7 +27,7 @@ export async function sessionRoutes(app: FastifyInstance) {
           skip,
           take: query.limit,
         }),
-        prisma.session.count({
+        prisma.agentSession.count({
           where: {
             ...(query.agentId !== undefined && { agentId: query.agentId }),
           },
@@ -50,7 +50,7 @@ export async function sessionRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { id: string } }>('/api/sessions/:id', async (req, reply) => {
     try {
-      const session = await prisma.session.findUnique({
+      const session = await prisma.agentSession.findUnique({
         where: { id: req.params.id },
         include: {
           agent: { select: { id: true, name: true, avatar: true } },

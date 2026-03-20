@@ -68,13 +68,13 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  authSessions  AuthSession[]
+  sessions      Session[]
   accounts      Account[]
   workspaces    Workspace[]     @relation("WorkspaceOwner")
   agents        Agent[]         @relation("AgentOwner")
 }
 
-model AuthSession {
+model Session {
   id        String   @id @default(uuid())
   userId    String
   token     String   @unique
@@ -85,6 +85,8 @@ model AuthSession {
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("auth_session")
 }
 
 model Account {
@@ -147,7 +149,7 @@ model Agent {
   skills             AgentSkill[]
   policies           Policy[]
   memories           Memory[]
-  sessions           Session[]
+  sessions           AgentSession[]
   participations     TableParticipant[]
   moderatedTables    DiscussionTable[]   @relation("moderator")
   mcpAssignments     AgentMcpServer[]
@@ -193,11 +195,11 @@ model Policy {
   sessionId String?
   createdAt DateTime    @default(now())
 
-  agent   Agent?   @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  session Session? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  agent   Agent?        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  session AgentSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
-model Session {
+model AgentSession {
   id        String    @id @default(uuid())
   agentId   String?
   tableId   String?
@@ -208,6 +210,8 @@ model Session {
   table    DiscussionTable? @relation(fields: [tableId], references: [id])
   messages Message[]
   policies Policy[]
+
+  @@map("Session")
 }
 
 model Message {
@@ -220,7 +224,7 @@ model Message {
   tokenCount Int?
   timestamp  DateTime    @default(now())
 
-  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session AgentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId, timestamp])
 }
@@ -239,7 +243,7 @@ model DiscussionTable {
 
   moderator    Agent              @relation("moderator", fields: [moderatorId], references: [id])
   participants TableParticipant[]
-  sessions     Session[]
+  sessions     AgentSession[]
 }
 
 model TableParticipant {
