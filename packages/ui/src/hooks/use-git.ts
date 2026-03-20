@@ -19,7 +19,11 @@ export interface UseGitReturn {
   push: () => Promise<GitPushResult>
 }
 
-export function useGit(active: boolean): UseGitReturn {
+function wsQuery(workspaceId?: string | null): string {
+  return workspaceId ? `?workspaceId=${workspaceId}` : ''
+}
+
+export function useGit(active: boolean, workspaceId?: string | null): UseGitReturn {
   const [status, setStatus] = useState<GitStatusResult | null>(null)
   const [log, setLog] = useState<GitLogEntry[]>([])
   const [branches, setBranches] = useState<GitBranchEntry[]>([])
@@ -29,31 +33,32 @@ export function useGit(active: boolean): UseGitReturn {
 
   const refreshStatus = useCallback(async () => {
     try {
-      const data = await apiGet<GitStatusResult>('/api/git/status')
+      const data = await apiGet<GitStatusResult>(`/api/git/status${wsQuery(workspaceId)}`)
       setStatus(data)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to get git status')
     }
-  }, [])
+  }, [workspaceId])
 
   const refreshLog = useCallback(async () => {
     try {
-      const data = await apiGet<GitLogEntry[]>('/api/git/log?limit=30')
+      const qs = workspaceId ? `?limit=30&workspaceId=${workspaceId}` : '?limit=30'
+      const data = await apiGet<GitLogEntry[]>(`/api/git/log${qs}`)
       setLog(data)
     } catch {
       // best effort
     }
-  }, [])
+  }, [workspaceId])
 
   const refreshBranches = useCallback(async () => {
     try {
-      const data = await apiGet<GitBranchEntry[]>('/api/git/branches')
+      const data = await apiGet<GitBranchEntry[]>(`/api/git/branches${wsQuery(workspaceId)}`)
       setBranches(data)
     } catch {
       // best effort
     }
-  }, [])
+  }, [workspaceId])
 
   // Initial load + auto-refresh
   useEffect(() => {
@@ -84,37 +89,37 @@ export function useGit(active: boolean): UseGitReturn {
   const stageFiles = useCallback(async (paths: string[]) => {
     setError(null)
     try {
-      await apiPost('/api/git/stage', { paths })
+      await apiPost('/api/git/stage', { paths, workspaceId: workspaceId ?? undefined })
       await refreshStatus()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to stage files')
     }
-  }, [refreshStatus])
+  }, [workspaceId, refreshStatus])
 
   const unstageFiles = useCallback(async (paths: string[]) => {
     setError(null)
     try {
-      await apiPost('/api/git/unstage', { paths })
+      await apiPost('/api/git/unstage', { paths, workspaceId: workspaceId ?? undefined })
       await refreshStatus()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to unstage files')
     }
-  }, [refreshStatus])
+  }, [workspaceId, refreshStatus])
 
   const commit = useCallback(async (message: string) => {
     setError(null)
     try {
-      await apiPost('/api/git/commit', { message })
+      await apiPost('/api/git/commit', { message, workspaceId: workspaceId ?? undefined })
       await Promise.all([refreshStatus(), refreshLog()])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Commit failed')
     }
-  }, [refreshStatus, refreshLog])
+  }, [workspaceId, refreshStatus, refreshLog])
 
   const push = useCallback(async (): Promise<GitPushResult> => {
     setError(null)
     try {
-      const result = await apiPost<GitPushResult>('/api/git/push', {})
+      const result = await apiPost<GitPushResult>('/api/git/push', { workspaceId: workspaceId ?? undefined })
       if (!result.success) {
         setError(result.message)
       }
@@ -125,7 +130,7 @@ export function useGit(active: boolean): UseGitReturn {
       setError(msg)
       return { success: false, message: msg }
     }
-  }, [refreshStatus])
+  }, [workspaceId, refreshStatus])
 
   return {
     status, log, branches, loading, error,

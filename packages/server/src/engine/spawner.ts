@@ -16,6 +16,7 @@ export interface SpawnOptions {
   readonly env?: Record<string, string>
   readonly mcpConfig?: MergedMcpConfig
   readonly addDirs?: string[]
+  readonly cwd?: string
 }
 
 export interface StreamEvent {
@@ -95,6 +96,7 @@ export class ClaudeCodeSpawner extends EventEmitter {
       stdio: ['pipe', 'pipe', 'pipe'],
       // On Unix create a new process group so we can kill the whole tree
       ...(process.platform !== 'win32' && { detached: true }),
+      ...(options.cwd ? { cwd: options.cwd } : {}),
     })
 
     this._process.stdout?.setEncoding('utf8')

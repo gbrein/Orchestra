@@ -25,6 +25,7 @@ import { GitBranchesTab } from '@/components/panels/git-branches-tab'
 export interface GitPanelProps {
   readonly open: boolean
   readonly onOpenChange: (open: boolean) => void
+  readonly workspaceId?: string | null
 }
 
 type GitTabId = 'status' | 'log' | 'branches'
@@ -37,7 +38,7 @@ const TABS: { id: GitTabId; label: string }[] = [
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export function GitPanel({ open, onOpenChange }: GitPanelProps) {
+export function GitPanel({ open, onOpenChange, workspaceId }: GitPanelProps) {
   const [activeTab, setActiveTab] = useState<GitTabId>('status')
   const [commitMsg, setCommitMsg] = useState('')
   const [committing, setCommitting] = useState(false)
@@ -48,7 +49,7 @@ export function GitPanel({ open, onOpenChange }: GitPanelProps) {
     loading, error,
     refreshStatus, refreshLog, refreshBranches,
     stageFiles, unstageFiles, commit, push,
-  } = useGit(open)
+  } = useGit(open, workspaceId)
 
   const stagedCount = status?.files.filter((f) => f.staged).length ?? 0
   const canCommit = commitMsg.trim().length > 0 && stagedCount > 0 && !committing

@@ -6,6 +6,7 @@ export interface WorkspaceContext {
   readonly addDirs: string[]
   readonly appendPromptSections: string[]
   readonly env: Record<string, string>
+  readonly cwd?: string
 }
 
 /**
@@ -19,7 +20,7 @@ export interface WorkspaceContext {
  */
 export async function buildWorkspaceContext(workspaceId: string): Promise<WorkspaceContext> {
   const [workspace, resources] = await Promise.all([
-    prisma.workspace.findUnique({ where: { id: workspaceId }, select: { contextDocument: true } }),
+    prisma.workspace.findUnique({ where: { id: workspaceId }, select: { contextDocument: true, workingDirectory: true } }),
     prisma.workspaceResource.findMany({
       where: { workspaceId },
       orderBy: { createdAt: 'asc' },
@@ -100,7 +101,12 @@ export async function buildWorkspaceContext(workspaceId: string): Promise<Worksp
     env[resource.varKey] = value
   }
 
-  return { addDirs, appendPromptSections, env }
+  return {
+    addDirs,
+    appendPromptSections,
+    env,
+    ...(workspace?.workingDirectory ? { cwd: workspace.workingDirectory } : {}),
+  }
 }
 
 // ------------------------------------------------------------------

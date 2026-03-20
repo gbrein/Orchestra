@@ -33,7 +33,7 @@ export interface ClientToServerEvents {
   'loop:stop': (data: { agentId: string }) => void
   'loop:approve': (data: { agentId: string; loopId: string; approved: boolean }) => void
   'agent:set_mode': (data: { agentId: string; mode: AgentMode }) => void
-  'chain:execute': (data: { chainId?: string; definition: ChainDefinition; initialMessage: string }) => void
+  'chain:execute': (data: { chainId?: string; definition: ChainDefinition; initialMessage: string; workspaceId?: string }) => void
   'chain:stop': (data: { chainId: string }) => void
 }
 
@@ -51,7 +51,11 @@ export interface ServerToClientEvents {
   'discussion:turn': (data: { tableId: string; agentName: string; role: string; content: string }) => void
   'discussion:moderator': (data: { tableId: string; decision: string; reasoning: string }) => void
   'discussion:concluded': (data: { tableId: string; conclusion: string }) => void
-  'chain:step_start': (data: { chainId: string; stepIndex: number; agentId: string }) => void
+  'chain:step_start': (data: { chainId: string; stepIndex: number; agentId: string; cwd?: string }) => void
+  'chain:step_text': (data: { chainId: string; stepIndex: number; agentId: string; content: string; partial: boolean }) => void
+  'chain:step_tool_use': (data: { chainId: string; stepIndex: number; agentId: string; toolName: string; input: unknown; id: string }) => void
+  'chain:step_tool_result': (data: { chainId: string; stepIndex: number; agentId: string; toolName: string; output: unknown; toolUseId: string }) => void
+  'chain:step_usage': (data: { chainId: string; stepIndex: number; agentId: string; usage: TokenUsage }) => void
   'chain:step_complete': (data: { chainId: string; stepIndex: number; agentId: string; output: string }) => void
   'chain:complete': (data: { chainId: string; totalSteps: number }) => void
   'chain:error': (data: { chainId: string; stepIndex: number; error: string }) => void

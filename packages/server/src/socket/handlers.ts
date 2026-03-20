@@ -917,7 +917,7 @@ function handleLoopApprove(
 async function handleChainExecute(
   socket: Socket<ClientToServerEvents, ServerToClientEvents>,
   io: Server<ClientToServerEvents, ServerToClientEvents>,
-  data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string },
+  data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string; workspaceId?: string },
 ): Promise<void> {
   const chainId = data.chainId ?? `chain-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
@@ -932,6 +932,16 @@ async function handleChainExecute(
   }
 
   try {
+    // Resolve workspace working directory if provided
+    let cwd: string | undefined
+    if (data.workspaceId) {
+      const workspace = await prisma.workspace.findUnique({
+        where: { id: data.workspaceId },
+        select: { workingDirectory: true },
+      })
+      cwd = workspace?.workingDirectory ?? undefined
+    }
+
     const executor = new ChainExecutor()
     socketActiveChains.set(chainId, executor)
 
@@ -940,12 +950,29 @@ async function handleChainExecute(
         chainId,
         stepIndex: stepData.stepIndex,
         agentId: stepData.agentId,
+        cwd: stepData.cwd,
       })
       io.emit('notification', {
         id: `chain-step-${chainId}-${stepData.stepIndex}`,
         level: 'info',
         title: `Chain step ${stepData.stepIndex} started (agent ${stepData.agentId})`,
       })
+    })
+
+    executor.on('step_text', (stepData) => {
+      io.emit('chain:step_text', { chainId, ...stepData })
+    })
+
+    executor.on('step_tool_use', (stepData) => {
+      io.emit('chain:step_tool_use', { chainId, ...stepData })
+    })
+
+    executor.on('step_tool_result', (stepData) => {
+      io.emit('chain:step_tool_result', { chainId, ...stepData })
+    })
+
+    executor.on('step_usage', (stepData) => {
+      io.emit('chain:step_usage', { chainId, ...stepData })
     })
 
     executor.on('step_complete', (stepData) => {
@@ -988,7 +1015,10 @@ async function handleChainExecute(
       })
     })
 
-    executor.execute(data.definition as ChainDefinition, data.initialMessage).catch((err: unknown) => {
+    executor.execute(data.definition as ChainDefinition, data.initialMessage, {
+      cwd,
+      workspaceId: data.workspaceId,
+    }).catch((err: unknown) => {
       socketActiveChains.delete(chainId)
       io.emit('agent:error', {
         agentId: chainId,

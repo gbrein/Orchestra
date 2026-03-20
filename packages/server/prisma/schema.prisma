@@ -278,11 +278,12 @@ enum ResourceType {
 }
 
 model Workspace {
-  id              String   @id @default(uuid())
-  name            String
-  contextDocument String?
-  planDocument    String?
-  userId          String?
+  id               String   @id @default(uuid())
+  name             String
+  contextDocument  String?
+  planDocument     String?
+  workingDirectory String?
+  userId           String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

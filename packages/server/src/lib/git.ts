@@ -4,10 +4,10 @@ import { ValidationError } from './errors'
 
 // ─── Core helper ────────────────────────────────────────────────────────────
 
-function runGit(args: string[]): Promise<string> {
+function runGit(args: string[], cwd?: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const proc = spawn('git', args, {
-      cwd: process.cwd(),
+      cwd: cwd ?? process.cwd(),
       stdio: ['pipe', 'pipe', 'pipe'],
     })
 
@@ -49,8 +49,8 @@ function validatePaths(paths: string[]): void {
 
 // ─── Status ─────────────────────────────────────────────────────────────────
 
-export async function getStatus(): Promise<GitStatusResult> {
-  const output = await runGit(['status', '--porcelain=v2', '--branch'])
+export async function getStatus(cwd?: string): Promise<GitStatusResult> {
+  const output = await runGit(['status', '--porcelain=v2', '--branch'], cwd)
   const lines = output.split('\n').map((l) => l.replace(/\r$/, '')).filter(Boolean)
 
   let branch = 'HEAD'
@@ -128,8 +128,8 @@ function mapStatusChar(ch: string): GitFileEntry['status'] {
 const LOG_SEP = '---GIT-LOG-SEP---'
 const LOG_FORMAT = `%H${LOG_SEP}%h${LOG_SEP}%an${LOG_SEP}%aI${LOG_SEP}%s`
 
-export async function getLog(limit = 30): Promise<GitLogEntry[]> {
-  const output = await runGit(['log', `--format=${LOG_FORMAT}`, `-n`, String(limit)])
+export async function getLog(limit = 30, cwd?: string): Promise<GitLogEntry[]> {
+  const output = await runGit(['log', `--format=${LOG_FORMAT}`, `-n`, String(limit)], cwd)
   const lines = output.split('\n').map((l) => l.replace(/\r$/, '')).filter(Boolean)
 
   return lines.map((line) => {
@@ -146,8 +146,8 @@ export async function getLog(limit = 30): Promise<GitLogEntry[]> {
 
 // ─── Branches ───────────────────────────────────────────────────────────────
 
-export async function getBranches(): Promise<GitBranchEntry[]> {
-  const output = await runGit(['branch', '--list', '--no-color'])
+export async function getBranches(cwd?: string): Promise<GitBranchEntry[]> {
+  const output = await runGit(['branch', '--list', '--no-color'], cwd)
   const lines = output.split('\n').map((l) => l.replace(/\r$/, '')).filter(Boolean)
 
   return lines.map((line) => ({
@@ -158,29 +158,29 @@ export async function getBranches(): Promise<GitBranchEntry[]> {
 
 // ─── Stage / Unstage ────────────────────────────────────────────────────────
 
-export async function stageFiles(paths: string[]): Promise<void> {
+export async function stageFiles(paths: string[], cwd?: string): Promise<void> {
   validatePaths(paths)
-  await runGit(['add', '--', ...paths])
+  await runGit(['add', '--', ...paths], cwd)
 }
 
-export async function unstageFiles(paths: string[]): Promise<void> {
+export async function unstageFiles(paths: string[], cwd?: string): Promise<void> {
   validatePaths(paths)
-  await runGit(['restore', '--staged', '--', ...paths])
+  await runGit(['restore', '--staged', '--', ...paths], cwd)
 }
 
 // ─── Commit ─────────────────────────────────────────────────────────────────
 
-export async function commit(message: string): Promise<string> {
-  const output = await runGit(['commit', '-m', message])
+export async function commit(message: string, cwd?: string): Promise<string> {
+  const output = await runGit(['commit', '-m', message], cwd)
   const match = output.match(/\[[\w/.-]+ ([a-f0-9]+)\]/)
   return match?.[1] ?? ''
 }
 
 // ─── Push ───────────────────────────────────────────────────────────────────
 
-export async function push(): Promise<GitPushResult> {
+export async function push(cwd?: string): Promise<GitPushResult> {
   try {
-    const output = await runGit(['push'])
+    const output = await runGit(['push'], cwd)
     return { success: true, message: output.trim() || 'Pushed successfully' }
   } catch (err) {
     return {
@@ -192,11 +192,11 @@ export async function push(): Promise<GitPushResult> {
 
 // ─── Diff ───────────────────────────────────────────────────────────────────
 
-export async function getDiff(file?: string): Promise<string> {
+export async function getDiff(file?: string, cwd?: string): Promise<string> {
   const args = ['diff']
   if (file) {
     validatePaths([file])
     args.push('--', file)
   }
-  return runGit(args)
+  return runGit(args, cwd)
 }

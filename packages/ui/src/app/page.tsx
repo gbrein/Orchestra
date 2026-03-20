@@ -612,7 +612,20 @@ export default function Home() {
 
   const handleRunWorkflow = useCallback((message: string) => {
     const chain = buildChain(nodes, edges)
-    if (chain.length < 2) return
+    if (chain.length < 2) {
+      setWorkflowLog((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: 'error' as const,
+          content: chain.length === 0
+            ? 'No agents on the canvas. Add at least 2 connected agents to run a workflow.'
+            : 'Connect at least 2 agents with edges to form a workflow chain.',
+          timestamp: new Date(),
+        },
+      ])
+      return
+    }
 
     const sock = getSocket()
     if (!sock.connected) {
@@ -657,10 +670,16 @@ export default function Home() {
       chainId,
       definition,
       initialMessage: message,
+      workspaceId: activeWorkspaceId ?? undefined,
     })
-  }, [nodes, edges, workflowMode])
+  }, [nodes, edges, workflowMode, activeWorkspaceId])
 
   const handleStopWorkflow = useCallback(() => {
+    const chainId = workflowChainIdRef.current
+    if (chainId) {
+      const sock = getSocket()
+      sock.emit('chain:stop', { chainId })
+    }
     setWorkflowRunning(false)
     setWorkflowStep(null)
     setWorkflowLog((prev) => [
@@ -694,9 +713,10 @@ export default function Home() {
     setWorkflowChatOpen(true)
   }, [])
 
-  // Track current chain ID and steps for event listeners
+  // Track current chain ID, steps, and per-step usage for event listeners
   const workflowChainIdRef = useRef<string>('')
   const workflowStepsRef = useRef<ReturnType<typeof buildChain>>([])
+  const workflowStepUsageRef = useRef<Map<number, import('@orchestra/shared').TokenUsage>>(new Map())
 
   // Listen for chain socket events to update workflow log
   const chainListenersAttachedRef = useRef(false)
@@ -706,7 +726,7 @@ export default function Home() {
 
     const socket = getSocket()
 
-    socket.on('chain:step_start', (data: { chainId: string; stepIndex: number; agentId: string }) => {
+    socket.on('chain:step_start', (data: { chainId: string; stepIndex: number; agentId: string; cwd?: string }) => {
       if (data.chainId !== workflowChainIdRef.current) return
       const steps = workflowStepsRef.current
       const step = steps[data.stepIndex]
@@ -721,9 +741,98 @@ export default function Home() {
           content: '',
           agentName,
           stepIndex: data.stepIndex,
+          cwd: data.cwd,
           timestamp: new Date(),
         },
       ])
+    })
+
+    // Streaming text — merge partial text into a single entry per step
+    socket.on('chain:step_text', (data: { chainId: string; stepIndex: number; agentId: string; content: string; partial: boolean }) => {
+      if (data.chainId !== workflowChainIdRef.current) return
+
+      setWorkflowLog((prev) => {
+        // Find the last step_text entry for this stepIndex
+        const lastIdx = prev.findLastIndex(
+          (e) => e.type === 'step_text' && e.stepIndex === data.stepIndex,
+        )
+
+        if (lastIdx >= 0 && prev[lastIdx]!.partial) {
+          // Append to existing partial entry
+          const existing = prev[lastIdx]!
+          return [
+            ...prev.slice(0, lastIdx),
+            {
+              ...existing,
+              content: existing.content + data.content,
+              partial: data.partial,
+            },
+            ...prev.slice(lastIdx + 1),
+          ]
+        }
+
+        // Create new text entry
+        return [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            type: 'step_text' as const,
+            content: data.content,
+            stepIndex: data.stepIndex,
+            partial: data.partial,
+            timestamp: new Date(),
+          },
+        ]
+      })
+    })
+
+    // Tool usage
+    socket.on('chain:step_tool_use', (data: { chainId: string; stepIndex: number; agentId: string; toolName: string; input: unknown; id: string }) => {
+      if (data.chainId !== workflowChainIdRef.current) return
+      const steps = workflowStepsRef.current
+      const step = steps[data.stepIndex]
+      const agentName = step?.agentName ?? `Agent ${data.stepIndex + 1}`
+
+      setWorkflowLog((prev) => [
+        ...prev,
+        {
+          id: data.id,
+          type: 'step_tool_use' as const,
+          content: data.toolName,
+          agentName,
+          stepIndex: data.stepIndex,
+          toolUse: { toolName: data.toolName, input: data.input, id: data.id },
+          timestamp: new Date(),
+        },
+      ])
+    })
+
+    // Tool result — update matching tool_use entry with output
+    socket.on('chain:step_tool_result', (data: { chainId: string; stepIndex: number; agentId: string; toolName: string; output: unknown; toolUseId: string }) => {
+      if (data.chainId !== workflowChainIdRef.current) return
+
+      setWorkflowLog((prev) => {
+        const toolIdx = prev.findIndex(
+          (e) => e.type === 'step_tool_use' && e.toolUse?.id === data.toolUseId,
+        )
+        if (toolIdx < 0) return prev
+
+        const existing = prev[toolIdx]!
+        return [
+          ...prev.slice(0, toolIdx),
+          {
+            ...existing,
+            toolUse: { ...existing.toolUse!, output: data.output },
+          },
+          ...prev.slice(toolIdx + 1),
+        ]
+      })
+    })
+
+    // Per-step usage — store on a ref so step_complete can include it
+    socket.on('chain:step_usage', (data: { chainId: string; stepIndex: number; agentId: string; usage: import('@orchestra/shared').TokenUsage }) => {
+      if (data.chainId !== workflowChainIdRef.current) return
+      workflowStepUsageRef.current.set(data.stepIndex, data.usage)
     })
 
     socket.on('chain:step_complete', (data: { chainId: string; stepIndex: number; agentId: string; output: string }) => {
@@ -731,6 +840,7 @@ export default function Home() {
       const steps = workflowStepsRef.current
       const step = steps[data.stepIndex]
       const agentName = step?.agentName ?? `Agent ${data.stepIndex + 1}`
+      const usage = workflowStepUsageRef.current.get(data.stepIndex)
 
       setWorkflowLog((prev) => [
         ...prev,
@@ -740,6 +850,7 @@ export default function Home() {
           content: data.output,
           agentName,
           stepIndex: data.stepIndex,
+          usage,
           timestamp: new Date(),
         },
       ])
@@ -749,6 +860,7 @@ export default function Home() {
       if (data.chainId !== workflowChainIdRef.current) return
       setWorkflowRunning(false)
       setWorkflowStep(null)
+      workflowStepUsageRef.current.clear()
       setWorkflowLog((prev) => [
         ...prev,
         {
@@ -772,6 +884,25 @@ export default function Home() {
           id: crypto.randomUUID(),
           type: 'error' as const,
           content: `${agentName}: ${data.error}`,
+          timestamp: new Date(),
+        },
+      ])
+    })
+
+    // Listen for executor-level errors (e.g. agent not found, chain execution failed)
+    // These are emitted as 'agent:error' by the backend when the whole chain fails
+    socket.on('agent:error', (data: { agentId: string; sessionId: string; error: string; type: string }) => {
+      // Match by chainId (stored in agentId field for chain-level errors)
+      if (data.agentId !== workflowChainIdRef.current) return
+
+      setWorkflowRunning(false)
+      setWorkflowStep(null)
+      setWorkflowLog((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: 'error' as const,
+          content: data.error,
           timestamp: new Date(),
         },
       ])
@@ -1345,7 +1476,7 @@ export default function Home() {
       </Sheet>
 
       {/* Git Panel */}
-      <GitPanel open={gitPanelOpen} onOpenChange={setGitPanelOpen} />
+      <GitPanel open={gitPanelOpen} onOpenChange={setGitPanelOpen} workspaceId={activeWorkspaceId} />
     </div>
     </ComplexityContext.Provider>
   )

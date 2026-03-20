@@ -9,6 +9,7 @@ import {
 } from 'react'
 import {
   Bot,
+  FolderOpen,
   GitBranch,
   Loader2,
   Play,
@@ -23,18 +24,32 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { ModeToggle } from '@/components/panels/mode-toggle'
-import type { AgentMode } from '@orchestra/shared'
+import { ToolCard, type ToolCardData } from '@/components/shared/tool-card'
+import type { AgentMode, TokenUsage } from '@orchestra/shared'
 import type { ChainStep } from '@/lib/chain-utils'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface WorkflowLogEntry {
   readonly id: string
-  readonly type: 'user' | 'step_start' | 'step_complete' | 'chain_complete' | 'error' | 'system'
+  readonly type:
+    | 'user'
+    | 'step_start'
+    | 'step_text'
+    | 'step_tool_use'
+    | 'step_tool_result'
+    | 'step_complete'
+    | 'chain_complete'
+    | 'error'
+    | 'system'
   readonly content: string
   readonly agentName?: string
   readonly stepIndex?: number
   readonly timestamp: Date
+  readonly partial?: boolean
+  readonly toolUse?: ToolCardData
+  readonly cwd?: string
+  readonly usage?: TokenUsage
 }
 
 export interface WorkflowChatProps {
@@ -67,27 +82,68 @@ function LogEntry({ entry }: { readonly entry: WorkflowLogEntry }) {
 
   if (entry.type === 'step_start') {
     return (
-      <div className="flex items-center gap-2 text-xs text-muted-foreground" role="listitem">
-        <Loader2 className="h-3 w-3 animate-spin text-primary" aria-hidden />
-        <span>
-          Step {(entry.stepIndex ?? 0) + 1}: Running{' '}
-          <span className="font-medium text-foreground">{entry.agentName}</span>
-        </span>
+      <div role="listitem">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin text-primary" aria-hidden />
+          <span>
+            Step {(entry.stepIndex ?? 0) + 1}: Running{' '}
+            <span className="font-medium text-foreground">{entry.agentName}</span>
+          </span>
+        </div>
+        {entry.cwd && (
+          <div className="ml-5 mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+            <FolderOpen className="h-2.5 w-2.5" aria-hidden />
+            <span className="font-mono">{entry.cwd}</span>
+          </div>
+        )}
       </div>
     )
   }
+
+  if (entry.type === 'step_text') {
+    return (
+      <div className="ml-5" role="listitem">
+        <div className="whitespace-pre-wrap break-words rounded bg-card border border-border px-2.5 py-1.5 text-xs text-foreground">
+          {entry.content}
+          {entry.partial && (
+            <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-primary" aria-label="Streaming" />
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  if (entry.type === 'step_tool_use') {
+    return (
+      <div className="ml-5" role="listitem">
+        {entry.toolUse && <ToolCard tool={entry.toolUse} />}
+      </div>
+    )
+  }
+
+  // step_tool_result is handled by updating the tool_use entry, not rendered separately
 
   if (entry.type === 'step_complete') {
     return (
       <div className="flex items-start gap-2" role="listitem">
         <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-500" aria-hidden />
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium">
-            {entry.agentName} completed
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-medium">
+              {entry.agentName} completed
+            </p>
+            {entry.usage && (
+              <span className="text-[10px] text-muted-foreground">
+                {entry.usage.inputTokens + entry.usage.outputTokens} tokens
+                {entry.usage.estimatedCostUsd !== undefined && (
+                  <> &middot; ${entry.usage.estimatedCostUsd.toFixed(4)}</>
+                )}
+              </span>
+            )}
+          </div>
           {entry.content && (
             <p className="mt-0.5 whitespace-pre-wrap break-words rounded bg-card border border-border px-2 py-1.5 text-xs text-muted-foreground">
-              {entry.content.length > 500 ? entry.content.slice(0, 500) + '…' : entry.content}
+              {entry.content.length > 500 ? entry.content.slice(0, 500) + '\u2026' : entry.content}
             </p>
           )}
         </div>
@@ -216,7 +272,7 @@ export function WorkflowChat({
                 {step.agentName}
               </span>
               {i < steps.length - 1 && (
-                <span className="text-[10px] text-muted-foreground">→</span>
+                <span className="text-[10px] text-muted-foreground">&rarr;</span>
               )}
             </div>
           ))}
@@ -260,8 +316,8 @@ export function WorkflowChat({
             onKeyDown={handleKeyDown}
             placeholder={
               isRunning
-                ? 'Send additional instructions… (Ctrl+Enter)'
-                : 'Describe what the workflow should do… (Ctrl+Enter to run)'
+                ? 'Send additional instructions\u2026 (Ctrl+Enter)'
+                : 'Describe what the workflow should do\u2026 (Ctrl+Enter to run)'
             }
             className="min-h-[60px] max-h-[160px] resize-none text-sm"
             rows={2}

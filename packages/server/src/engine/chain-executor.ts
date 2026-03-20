@@ -7,6 +7,7 @@ import { randomUUID } from 'crypto'
 import { buildSpawnConfig } from './prompt-builder'
 import { ClaudeCodeSpawner } from './spawner'
 import type { SpawnOptions } from './spawner'
+import type { TokenUsage } from '@orchestra/shared'
 
 export interface ChainStep {
   readonly agentId: string
@@ -25,8 +26,17 @@ export interface ChainDefinition {
   readonly edges: readonly ChainEdge[]
 }
 
+export interface ChainExecuteOptions {
+  readonly cwd?: string
+  readonly workspaceId?: string
+}
+
 export interface ChainExecutorEvents {
-  step_start: (data: { stepIndex: number; agentId: string }) => void
+  step_start: (data: { stepIndex: number; agentId: string; cwd?: string }) => void
+  step_text: (data: { stepIndex: number; agentId: string; content: string; partial: boolean }) => void
+  step_tool_use: (data: { stepIndex: number; agentId: string; toolName: string; input: unknown; id: string }) => void
+  step_tool_result: (data: { stepIndex: number; agentId: string; toolName: string; output: unknown; toolUseId: string }) => void
+  step_usage: (data: { stepIndex: number; agentId: string; usage: TokenUsage }) => void
   step_complete: (data: { stepIndex: number; agentId: string; output: string }) => void
   chain_complete: (data: { outputs: Map<number, string> }) => void
   error: (data: { stepIndex: number; error: string }) => void
@@ -40,10 +50,14 @@ export declare interface ChainExecutor {
 export class ChainExecutor extends EventEmitter {
   private stopped = false
   private activeSpawners: ClaudeCodeSpawner[] = []
+  private executionCwd?: string
+  private executionWorkspaceId?: string
 
-  async execute(chain: ChainDefinition, initialMessage: string): Promise<void> {
+  async execute(chain: ChainDefinition, initialMessage: string, options?: ChainExecuteOptions): Promise<void> {
     this.stopped = false
     this.activeSpawners = []
+    this.executionCwd = options?.cwd
+    this.executionWorkspaceId = options?.workspaceId
 
     validateNoCycles(chain)
 
@@ -173,11 +187,12 @@ export class ChainExecutor extends EventEmitter {
     outputs: Map<number, string>,
     initialMessage: string,
   ): Promise<string> {
-    this.emit('step_start', { stepIndex, agentId: step.agentId })
-
     const message = this.buildStepMessage(stepIndex, predecessors, outputs, initialMessage)
-    const config = await buildSpawnConfig(step.agentId)
+    const config = await buildSpawnConfig(step.agentId, this.executionWorkspaceId)
     const sessionId = randomUUID()
+    const cwd = this.executionCwd ?? config.cwd
+
+    this.emit('step_start', { stepIndex, agentId: step.agentId, cwd })
 
     const spawner = new ClaudeCodeSpawner()
     this.activeSpawners.push(spawner)
@@ -189,6 +204,19 @@ export class ChainExecutor extends EventEmitter {
         if (!data.partial) {
           fullOutput += data.content
         }
+        this.emit('step_text', { stepIndex, agentId: step.agentId, content: data.content, partial: data.partial })
+      })
+
+      spawner.on('tool_use', (data: { toolName: string; input: unknown; id: string }) => {
+        this.emit('step_tool_use', { stepIndex, agentId: step.agentId, toolName: data.toolName, input: data.input, id: data.id })
+      })
+
+      spawner.on('tool_result', (data: { toolName: string; output: unknown; toolUseId: string }) => {
+        this.emit('step_tool_result', { stepIndex, agentId: step.agentId, toolName: data.toolName, output: data.output, toolUseId: data.toolUseId })
+      })
+
+      spawner.on('usage', (data: TokenUsage) => {
+        this.emit('step_usage', { stepIndex, agentId: step.agentId, usage: data })
       })
 
       spawner.on('completion', () => {
@@ -214,6 +242,7 @@ export class ChainExecutor extends EventEmitter {
           permissionMode: config.permissionMode,
           maxBudgetUsd: config.maxBudgetUsd,
           env: config.env,
+          cwd,
           ...step.config,
         })
       } catch (err) {
