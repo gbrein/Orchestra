@@ -936,6 +936,11 @@ async function handleChainExecute(
     socketActiveChains.set(chainId, executor)
 
     executor.on('step_start', (stepData) => {
+      io.emit('chain:step_start', {
+        chainId,
+        stepIndex: stepData.stepIndex,
+        agentId: stepData.agentId,
+      })
       io.emit('notification', {
         id: `chain-step-${chainId}-${stepData.stepIndex}`,
         level: 'info',
@@ -944,6 +949,12 @@ async function handleChainExecute(
     })
 
     executor.on('step_complete', (stepData) => {
+      io.emit('chain:step_complete', {
+        chainId,
+        stepIndex: stepData.stepIndex,
+        agentId: stepData.agentId,
+        output: typeof stepData.output === 'string' ? stepData.output : JSON.stringify(stepData.output ?? ''),
+      })
       io.emit('notification', {
         id: `chain-step-done-${chainId}-${stepData.stepIndex}`,
         level: 'info',
@@ -953,6 +964,10 @@ async function handleChainExecute(
 
     executor.on('chain_complete', (completeData) => {
       socketActiveChains.delete(chainId)
+      io.emit('chain:complete', {
+        chainId,
+        totalSteps: completeData.outputs.size,
+      })
       io.emit('notification', {
         id: `chain-complete-${chainId}`,
         level: 'info',
@@ -961,6 +976,11 @@ async function handleChainExecute(
     })
 
     executor.on('error', (errData) => {
+      io.emit('chain:error', {
+        chainId,
+        stepIndex: errData.stepIndex,
+        error: errData.error.slice(0, 200),
+      })
       io.emit('notification', {
         id: `chain-error-${chainId}-${errData.stepIndex}`,
         level: 'error',

@@ -130,6 +130,25 @@ export async function canvasRoutes(app: FastifyInstance) {
     }
   })
 
+  // Update workspace plan document
+  app.patch<{ Params: { id: string } }>('/api/workspaces/:id/plan', async (req, reply) => {
+    try {
+      const { id: workspaceId } = req.params
+      const body = z.object({ planDocument: z.string().nullable() }).parse(req.body)
+
+      const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } })
+      if (!workspace) throw new NotFoundError('Workspace', workspaceId)
+
+      const updated = await prisma.workspace.update({
+        where: { id: workspaceId },
+        data: { planDocument: body.planDocument },
+      })
+      sendSuccess(reply, updated)
+    } catch (error) {
+      sendError(reply, error)
+    }
+  })
+
   app.put<{ Params: { id: string } }>('/api/workspaces/:id/canvas', async (req, reply) => {
     try {
       const { id: workspaceId } = req.params

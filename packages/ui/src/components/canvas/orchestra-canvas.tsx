@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   ReactFlow,
   MiniMap,
@@ -77,6 +77,7 @@ interface OrchestraCanvasInnerProps {
   onViewReady?: (controls: CanvasViewControls) => void
   onNodeDoubleClick?: (nodeId: string, nodeType: string) => void
   onZoomChange?: (zoom: number) => void
+  activeAgentIds?: ReadonlySet<string>
 }
 
 export interface UndoRedoControls {
@@ -101,6 +102,7 @@ function OrchestraCanvasInner({
   onViewReady,
   onNodeDoubleClick,
   onZoomChange,
+  activeAgentIds,
 }: OrchestraCanvasInnerProps) {
   const [nodes, setNodes, handleNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, handleEdgesChange] = useEdgesState(initialEdges)
@@ -312,7 +314,15 @@ function OrchestraCanvasInner({
     <div className="h-full w-full" onDragOver={handleDragOver} onDrop={handleDrop}>
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={useMemo(() =>
+          activeAgentIds && activeAgentIds.size > 0
+            ? edges.map((e) => ({
+                ...e,
+                data: { ...e.data, isActive: activeAgentIds.has(e.source) },
+              }))
+            : edges,
+          [edges, activeAgentIds],
+        )}
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
@@ -370,6 +380,7 @@ export interface OrchestraCanvasProps {
   onViewReady?: (controls: CanvasViewControls) => void
   onNodeDoubleClick?: (nodeId: string, nodeType: string) => void
   onZoomChange?: (zoom: number) => void
+  activeAgentIds?: ReadonlySet<string>
 }
 
 export function OrchestraCanvas({
@@ -380,6 +391,7 @@ export function OrchestraCanvas({
   onViewReady,
   onNodeDoubleClick,
   onZoomChange,
+  activeAgentIds,
 }: OrchestraCanvasProps) {
   return (
     <ReactFlowProvider>
@@ -391,6 +403,7 @@ export function OrchestraCanvas({
         onViewReady={onViewReady}
         onNodeDoubleClick={onNodeDoubleClick}
         onZoomChange={onZoomChange}
+        activeAgentIds={activeAgentIds}
       />
     </ReactFlowProvider>
   )
