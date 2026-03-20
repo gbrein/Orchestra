@@ -30,6 +30,7 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { ModeToggle } from '@/components/panels/mode-toggle'
 import { ToolCard, type ToolCardData } from '@/components/shared/tool-card'
+import { FolderPicker } from '@/components/shared/folder-picker'
 import type { AgentMode, TokenUsage } from '@orchestra/shared'
 import type { ChainStep } from '@/lib/chain-utils'
 
@@ -204,6 +205,7 @@ export function WorkflowChat({
   const [dirInput, setDirInput] = useState(workingDirectory ?? '')
   const [dirSaving, setDirSaving] = useState(false)
   const [dirSaved, setDirSaved] = useState(false)
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -314,43 +316,63 @@ export function WorkflowChat({
             )}
           </button>
           {dirExpanded && (
-            <div className="mt-1.5 flex items-center gap-1.5">
-              <Input
-                value={dirInput}
-                onChange={(e) => {
-                  setDirInput(e.target.value)
-                  setDirSaved(false)
-                }}
-                placeholder="/path/to/your/project"
-                className="h-7 flex-1 font-mono text-xs"
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 w-7 shrink-0 p-0"
-                disabled={dirSaving || (dirInput === (workingDirectory ?? ''))}
-                onClick={async () => {
-                  setDirSaving(true)
-                  try {
-                    onWorkingDirectoryChange?.(dirInput.trim() || null)
-                    setDirSaved(true)
-                    setTimeout(() => setDirSaved(false), 2000)
-                  } finally {
-                    setDirSaving(false)
-                  }
-                }}
-                aria-label="Save working directory"
-              >
-                {dirSaving ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : dirSaved ? (
-                  <Check className="h-3 w-3 text-green-500" />
-                ) : (
-                  <Save className="h-3 w-3" />
-                )}
-              </Button>
+            <div className="mt-1.5 flex flex-col gap-1.5">
+              <div className="flex items-center gap-1.5">
+                <Input
+                  value={dirInput}
+                  onChange={(e) => {
+                    setDirInput(e.target.value)
+                    setDirSaved(false)
+                  }}
+                  placeholder="/path/to/your/project"
+                  className="h-7 flex-1 font-mono text-xs"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 shrink-0 gap-1 px-2 text-[10px]"
+                  onClick={() => setFolderPickerOpen(true)}
+                >
+                  <FolderOpen className="h-3 w-3" />
+                  Browse
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 w-7 shrink-0 p-0"
+                  disabled={dirSaving || (dirInput === (workingDirectory ?? ''))}
+                  onClick={async () => {
+                    setDirSaving(true)
+                    try {
+                      onWorkingDirectoryChange?.(dirInput.trim() || null)
+                      setDirSaved(true)
+                      setTimeout(() => setDirSaved(false), 2000)
+                    } finally {
+                      setDirSaving(false)
+                    }
+                  }}
+                  aria-label="Save working directory"
+                >
+                  {dirSaving ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : dirSaved ? (
+                    <Check className="h-3 w-3 text-green-500" />
+                  ) : (
+                    <Save className="h-3 w-3" />
+                  )}
+                </Button>
+              </div>
             </div>
           )}
+          <FolderPicker
+            open={folderPickerOpen}
+            onOpenChange={setFolderPickerOpen}
+            initialPath={dirInput || workingDirectory}
+            onSelect={(path) => {
+              setDirInput(path)
+              setDirSaved(false)
+            }}
+          />
         </div>
       </header>
 
