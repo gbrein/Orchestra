@@ -76,6 +76,11 @@ async function main() {
     },
   })
 
+  // Health check — no auth required
+  app.get('/api/health', async (_req, reply) => {
+    reply.send({ ok: true, timestamp: new Date().toISOString() })
+  })
+
   // Auth routes (before middleware so /api/auth/* is accessible)
   await app.register(authRoutes)
 

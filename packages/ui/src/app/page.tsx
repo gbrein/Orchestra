@@ -1552,6 +1552,7 @@ export default function Home() {
             isRunning={workflowRunning}
             log={workflowLog}
             mode={workflowMode}
+            hasWorkspace={!!activeWorkspaceId}
             workingDirectory={workspaceWorkingDir}
             onWorkingDirectoryChange={(dir) => void handleWorkingDirectoryChange(dir)}
             onSendMessage={handleWorkflowSendMessage}

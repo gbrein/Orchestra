@@ -20,7 +20,7 @@
     "db:studio": "npx prisma studio --schema=packages/server/prisma/schema.prisma",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
-    "setup": "npm install && bash scripts/setup-env.sh && docker-compose up -d && npm run db:migrate && npm run db:seed",
+    "setup": "npm install && node scripts/setup-env.js && docker-compose up -d && npm run db:migrate && npm run db:seed",
     "test": "turbo test",
     "test:coverage": "turbo test:coverage"
   },
