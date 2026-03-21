@@ -90,7 +90,7 @@ The first time you access the app, you'll be prompted to create an account (emai
 The `npm run setup` command runs these steps automatically:
 
 1. `npm install` — installs all dependencies across the monorepo
-2. `bash scripts/setup-env.sh` — generates a `.env` file from `.env.example` with a cryptographically random `BETTER_AUTH_SECRET`
+2. `node scripts/setup-env.js` — generates a `.env` file from `.env.example` with a cryptographically random `BETTER_AUTH_SECRET` (cross-platform, no bash required)
 3. `docker-compose up -d` — starts PostgreSQL 16 in a container (port 5432)
 4. `npm run db:migrate` — runs all Prisma migrations to create the database schema
 5. `npm run db:seed` — seeds sample data (example assistants, skills, and policies)
@@ -161,7 +161,8 @@ The canvas is the heart of Orchestra. It's a React Flow-powered workspace where 
 - **Command palette**: `Ctrl+K` opens a searchable command menu
 - **Templates**: 4 pre-built configurations to start from (Code Review Pipeline, Content Team, Research Assistant, Brainstorm Team)
 - **Persistence**: Canvas layout is auto-saved to the database with 2-second debounce
-- **Multiple workspaces**: Create, rename, switch, and delete workspaces — each with its own canvas and resources
+- **Project-based workspaces**: Each workspace is tied to a project folder — select the folder when creating the workspace, and all resources, git, and agent execution happen in that directory
+- **Multiple workspaces**: Create, rename, switch, and delete workspaces — each with its own canvas, resources, and git context
 - **Dark mode**: Default theme with carefully chosen status colors
 
 ### Assistant Management
@@ -266,7 +267,7 @@ Loops let an assistant iterate on a task autonomously until a completion criteri
 - **Progress journal**: Learnings from each iteration are carried forward as context
 - **Visual indicator**: Canvas nodes show a pulsing loop icon when an iteration is running
 
-### Agent Chains (DAG)
+### Agent Chains (DAG) — Workflows
 
 Chains allow you to connect assistants in a directed acyclic graph (DAG), where the output of one assistant becomes the input of the next.
 
@@ -275,6 +276,11 @@ Chains allow you to connect assistants in a directed acyclic graph (DAG), where 
 - **Parallel branches**: Independent branches run concurrently via `Promise.allSettled`
 - **Conditional edges**: Add regex patterns to edges so data only flows when the output matches
 - **Fan-in support**: When multiple edges converge on one assistant, outputs are concatenated with headers
+- **Workflow chat**: Dedicated chat panel shows real-time streaming, tool usage, and step completion with token costs
+- **Step output**: Each step shows the full agent response — click to open the agent's individual chat with the workflow history
+- **Node status**: Canvas nodes change status to "running" during execution and revert to "idle" on completion
+- **Cost tracking**: Total workflow cost (tokens + USD) displayed on completion
+- **Persistence**: Workflow runs are stored in the database (`ChainRun` + `ChainStepResult`) for history
 
 ### PRD Pipelines
 
@@ -287,13 +293,26 @@ PRD Pipelines let you feed a product requirements document and have assistants w
 
 ### Workspace Resources
 
-Each workspace can hold files, links, notes, and variables that are accessible to all assistants in that workspace.
+Each workspace is tied to a project folder. Resources (files, links, notes, variables) live inside the project at `{project}/.orchestra/resources/`, making them visible in your file system and version-controllable (`.orchestra/` is auto-added to `.gitignore`).
 
-- **File uploads**: Drag-and-drop or click-to-browse file upload with previews, rename, and download
+- **Project folder**: Selected at workspace creation — all resources, agents, and git operations target this folder
+- **File uploads**: Drag-and-drop or click-to-browse file upload, stored inside the project
+- **Folder browser**: Built-in file system navigator to select project folders, with git repository detection
 - **Links**: Save URLs with titles and descriptions
 - **Notes**: Rich text notes that auto-save on blur
 - **Variables**: Key-value pairs for configuration, with optional encryption for secrets (AES-256-GCM)
-- **File injection**: Workspace files can be referenced in chat messages and injected into assistant context
+- **File injection**: Workspace files are in the agent's working directory — no separate `--add-dir` needed
+- **Git integration**: Git panel automatically shows the status, branches, and log of the project folder
+
+### Git Integration
+
+The Git panel provides full git visibility and operations scoped to the workspace's project folder.
+
+- **Scoped to project**: All git operations (status, log, branches, diff, stage, commit, push) run in the workspace's configured folder
+- **Visual status**: See modified, staged, and untracked files with one-click stage/unstage
+- **Commit & push**: Commit staged changes with a message and push directly from the panel
+- **Branch view**: See all local branches with the current branch highlighted
+- **Directory indicator**: Shows which folder git is operating on — no ambiguity
 
 ### Authentication
 
@@ -371,6 +390,8 @@ packages/server/src/
 │   ├── discussions.ts          # Discussion tables + transcripts
 │   ├── canvas.ts               # Workspaces + canvas layout
 │   ├── resources.ts            # File upload, links, notes, variables
+│   ├── git.ts                  # Git operations (status, log, branches, commit, push)
+│   ├── filesystem.ts           # Directory browser for folder picker
 │   ├── mcp-servers.ts          # MCP server registry
 │   ├── approvals.ts            # Pending approval queue
 │   ├── loops.ts                # Loops, chains, PRD pipelines
@@ -400,7 +421,7 @@ packages/server/src/
 │   ├── validator.ts            # SKILL.md format validation
 │   └── conflict-detector.ts    # Heuristic skill conflict detection
 ├── resources/
-│   ├── file-storage.ts         # Disk-based file storage (~/.orchestra/workspaces/)
+│   ├── file-storage.ts         # Project-based file storage ({project}/.orchestra/resources/)
 │   ├── encryption.ts           # AES-256-GCM for secret variables
 │   └── resource-injector.ts    # Inject workspace resources into assistant context
 ├── services/
@@ -447,8 +468,12 @@ packages/ui/src/
 │   │   ├── discussion-controls.tsx   # Start/pause/stop/export
 │   │   ├── discussions-list.tsx      # All discussions list
 │   │   ├── assistants-list.tsx       # All assistants with status
-│   │   ├── workspace-switcher.tsx    # Create, rename, delete workspaces
-│   │   ├── workspace-context-editor.tsx  # Workspace-level context document
+│   │   ├── workflow-chat.tsx         # Workflow execution chat with streaming
+│   │   ├── workflow-toolbar.tsx      # Canvas workflow controls (run/stop)
+│   │   ├── git-panel.tsx            # Git status, log, branches, commit, push
+│   │   ├── workspace-switcher.tsx   # Create (with folder picker), rename, delete workspaces
+│   │   ├── workspace-context-editor.tsx  # Workspace context document + working directory
+│   │   ├── workspace-plan-editor.tsx     # Workspace plan document
 │   │   ├── global-safety-panel.tsx   # Global policy editor
 │   │   ├── settings-panel.tsx        # App settings (complexity, theme)
 │   │   ├── model-selector.tsx        # Model tier selector
@@ -472,9 +497,13 @@ packages/ui/src/
 │   │   └── favorites-section.tsx     # Pinned assistant shortcuts
 │   ├── auth/
 │   │   └── auth-guard.tsx            # Route protection component
+│   ├── shared/
+│   │   ├── tool-card.tsx             # Reusable expandable tool card
+│   │   └── folder-picker.tsx         # Directory browser dialog
 │   └── ui/                           # shadcn/ui primitives (Button, Dialog, Sheet, etc.)
 ├── hooks/
-│   ├── use-socket.ts                 # Socket.IO connection management
+│   ├── use-socket.ts                 # Socket.IO auto-connection + status tracking
+│   ├── use-git.ts                    # Git operations hook (workspace-scoped)
 │   ├── use-agent-stream.ts           # Chat streaming with session-level cache
 │   ├── use-agent-status.ts           # Global agent status + token tracking
 │   ├── use-canvas-persistence.ts     # Workspace CRUD + canvas save/load
@@ -538,14 +567,15 @@ When you send a message to an assistant, Orchestra:
 
 ### Database Schema
 
-The Prisma schema defines 15+ models including:
+The Prisma schema defines 20+ models including:
 
 - `Agent` — assistant configuration (persona, model, skills, status)
 - `AgentSession` / `SessionMessage` — conversation history
 - `Policy` — safety rules at global, agent, and session levels
 - `Skill` / `AgentSkill` — skill catalog and per-assistant assignment
-- `Workspace` / `CanvasLayout` — workspace management and canvas persistence
+- `Workspace` / `CanvasLayout` — workspace management with project folder (`workingDirectory`) and canvas persistence
 - `WorkspaceResource` — files, links, notes, variables per workspace
+- `ChainRun` / `ChainStepResult` — workflow execution history with output, tokens, and cost per step
 - `DiscussionTable` / `DiscussionParticipant` — multi-agent discussion state
 - `McpServerConfig` — MCP server registry
 - `ActivityEvent` — audit log of all assistant activity
@@ -558,7 +588,7 @@ The Prisma schema defines 15+ models including:
 Orchestra takes security seriously at every layer:
 
 - **No shell injection**: All Claude Code processes are spawned with an args array — never `shell: true`
-- **Environment isolation**: Child processes only receive `PATH`, `HOME`, and `ANTHROPIC_API_KEY` — never `DATABASE_URL` or other server secrets
+- **Environment isolation**: Child processes only receive `PATH`, `HOME`, `APPDATA`, and essential system variables — never `DATABASE_URL` or other server secrets
 - **Git clone safety**: Skill imports use `--no-checkout --config core.hooksPath=/dev/null`, and only `SKILL.md` is checked out
 - **Path sanitization**: Skill names are restricted to `[a-zA-Z0-9_-]` with no `..` allowed
 - **File upload safety**: Uploaded filenames are replaced with UUIDs, path traversal is blocked, and file size is validated both during streaming and at the buffer level
