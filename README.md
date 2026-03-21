@@ -24,6 +24,8 @@ Visual orchestration platform for Claude Code agents. A drag-and-drop canvas whe
   - [Discussion Tables](#discussion-tables)
   - [Autonomous Loops](#autonomous-loops)
   - [Agent Chains (DAG)](#agent-chains-dag)
+  - [Maestro Orchestrator](#maestro-orchestrator)
+  - [Workflow Advisor](#workflow-advisor)
   - [PRD Pipelines](#prd-pipelines)
   - [Workspace Resources](#workspace-resources)
   - [Authentication](#authentication)
@@ -282,6 +284,32 @@ Chains allow you to connect assistants in a directed acyclic graph (DAG), where 
 - **Cost tracking**: Total workflow cost (tokens + USD) displayed on completion
 - **Persistence**: Workflow runs are stored in the database (`ChainRun` + `ChainStepResult`) for history
 
+### Maestro Orchestrator
+
+Maestro is an intelligent supervisor that sits between workflow steps. Instead of passing raw output from one assistant to the next, Maestro evaluates each step's output and contextualizes the handoff.
+
+- **Visual overlay**: Appears as a distinctive purple card on the canvas above the chain, showing real-time status (idle, evaluating, decided)
+- **Contextualizes messages**: Wraps each assistant's output with clear instructions so the next assistant understands the full picture
+- **Redirect (retry)**: If output quality is insufficient, Maestro can redirect back to the same step with improved instructions — first redirect is auto-approved, subsequent retries require user confirmation
+- **Early conclusion**: Can conclude the workflow early if the objective is already met before all steps run
+- **Criticism level**: Configurable rigor from 1 (Relaxed) to 5 (Demanding) via a slider in the Maestro settings drawer — controls how strict the evaluation is
+- **Custom instructions**: Free-text instructions appended to the Maestro's system prompt for workflow-specific guidance
+- **Language consistency**: Detects the language of agent output and ensures all subsequent agents respond in the same language
+- **Learning**: Saves patterns observed across runs (e.g., "Code Writer tends to forget error handling") to the Memory table for future reference
+- **Truncation handling**: Recognizes that truncated outputs (due to token limits) are normal and does not redirect for them
+- **Max retries**: Limits redirects to 2 per step to prevent infinite loops
+- **Settings drawer**: Click the Maestro overlay to open a panel with toggle, criticism slider, custom instructions, and usage guide
+
+### Workflow Advisor
+
+Advisor is a post-run analysis tool that evaluates a completed workflow and suggests actionable improvements.
+
+- **Canvas FAB**: Floating action button in the bottom-left corner of the canvas, visible after the first completed workflow run
+- **Configurable model**: Choose between Haiku (fast/cheap), Sonnet (balanced), or Opus (deepest analysis) via dropdown in the workflow chat
+- **Suggestion categories**: Agent improvements (persona tweaks), skill recommendations (from the marketplace catalog), step order changes, and output quality assessment
+- **One-click actions**: "Apply Skill" installs and attaches a skill to the agent; "Update Persona" updates the agent's persona directly — both with loading/success feedback
+- **Inline results**: Analysis results render as a card in the workflow chat with category badges, severity indicators, and an objective-met assessment
+
 ### PRD Pipelines
 
 PRD Pipelines let you feed a product requirements document and have assistants work through each user story.
@@ -408,7 +436,9 @@ packages/server/src/
 │   ├── approval-manager.ts     # Approval queue with timeout
 │   ├── mcp-config-builder.ts   # MCP config merge + conflict resolution
 │   ├── loop-engine.ts          # Autonomous iteration engine
-│   ├── chain-executor.ts       # DAG execution engine
+│   ├── chain-executor.ts       # DAG execution engine (linear + Maestro-driven)
+│   ├── maestro.ts              # Maestro orchestrator (evaluate, contextualize, redirect)
+│   ├── advisor.ts              # Workflow Advisor (post-run analysis + suggestions)
 │   ├── prd-pipeline.ts         # PRD story processing
 │   └── error-types.ts          # Error taxonomy and classification
 ├── discussion/
@@ -448,6 +478,8 @@ packages/ui/src/
 │   │   ├── canvas-placeholder.tsx    # Empty state with quick actions
 │   │   ├── template-gallery.tsx      # Pre-built template selector
 │   │   ├── loop-indicator.tsx        # Visual loop progress overlay
+│   │   ├── maestro-overlay.tsx      # Maestro status card on canvas
+│   │   ├── advisor-fab.tsx          # Advisor floating action button
 │   │   ├── nodes/                    # AgentNode, SkillNode, PolicyNode, McpNode, ResourceNode, StickyNoteNode
 │   │   └── edges/                    # OrchestraEdge (association + flow)
 │   ├── panels/
@@ -470,6 +502,8 @@ packages/ui/src/
 │   │   ├── assistants-list.tsx       # All assistants with status
 │   │   ├── workflow-chat.tsx         # Workflow execution chat with streaming
 │   │   ├── workflow-toolbar.tsx      # Canvas workflow controls (run/stop)
+│   │   ├── maestro-drawer.tsx       # Maestro settings (toggle, rigor, instructions)
+│   │   ├── advisor-card.tsx         # Advisor suggestion card with actions
 │   │   ├── git-panel.tsx            # Git status, log, branches, commit, push
 │   │   ├── workspace-switcher.tsx   # Create (with folder picker), rename, delete workspaces
 │   │   ├── workspace-context-editor.tsx  # Workspace context document + working directory
