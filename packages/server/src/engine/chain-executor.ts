@@ -32,6 +32,8 @@ export interface ChainExecuteOptions {
   readonly cwd?: string
   readonly workspaceId?: string
   readonly maestro?: boolean
+  readonly maestroRigor?: number
+  readonly maestroCustomInstructions?: string
 }
 
 export interface ChainExecutorEvents {
@@ -257,6 +259,8 @@ export class ChainExecutor extends EventEmitter {
           completedStepIndex: currentStepIndex,
           totalSteps: chain.steps.length,
           memories,
+          rigor: options.maestroRigor,
+          customInstructions: options.maestroCustomInstructions,
         })
       } catch {
         // Maestro failed — fall through to linear execution

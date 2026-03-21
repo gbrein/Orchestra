@@ -18,6 +18,7 @@ import { OrchestraCanvas, type UndoRedoControls } from '@/components/canvas/orch
 import { WorkflowToolbar } from '@/components/canvas/workflow-toolbar'
 import { MaestroOverlay } from '@/components/canvas/maestro-overlay'
 import { AdvisorFab } from '@/components/canvas/advisor-fab'
+import { MaestroDrawer } from '@/components/panels/maestro-drawer'
 import { WorkflowChat, type WorkflowLogEntry } from '@/components/panels/workflow-chat'
 import { hasAgentChain, buildChain } from '@/lib/chain-utils'
 import { getSocket } from '@/lib/socket'
@@ -116,6 +117,9 @@ export default function Home() {
   const [workflowLog, setWorkflowLog] = useState<WorkflowLogEntry[]>([])
   const [workflowMode, setWorkflowMode] = useState<import('@orchestra/shared').AgentMode>('default')
   const [maestroEnabled, setMaestroEnabled] = useState(true)
+  const [maestroDrawerOpen, setMaestroDrawerOpen] = useState(false)
+  const [maestroRigor, setMaestroRigor] = useState<1 | 2 | 3 | 4 | 5>(3)
+  const [maestroCustomInstructions, setMaestroCustomInstructions] = useState('')
   const [maestroStatus, setMaestroStatus] = useState<'idle' | 'thinking' | 'decided'>('idle')
   const [maestroLastAction, setMaestroLastAction] = useState<'continue' | 'redirect' | 'conclude' | null>(null)
   const [maestroLastTargetAgent, setMaestroLastTargetAgent] = useState<string | null>(null)
@@ -776,8 +780,10 @@ export default function Home() {
       initialMessage: message,
       workspaceId: activeWorkspaceId ?? undefined,
       maestro: maestroEnabled,
+      maestroRigor,
+      maestroCustomInstructions: maestroCustomInstructions || undefined,
     })
-  }, [nodes, edges, workflowMode, activeWorkspaceId, maestroEnabled])
+  }, [nodes, edges, workflowMode, activeWorkspaceId, maestroEnabled, maestroRigor, maestroCustomInstructions])
 
   const handleStopWorkflow = useCallback(() => {
     const chainId = workflowChainIdRef.current
@@ -1403,7 +1409,7 @@ export default function Home() {
                 status={maestroStatus}
                 lastAction={maestroLastAction}
                 lastTargetAgent={maestroLastTargetAgent}
-                onToggle={setMaestroEnabled}
+                onClick={() => setMaestroDrawerOpen(true)}
               />
               <AdvisorFab
                 visible={hasAgentChain(nodes, edges)}
@@ -1767,6 +1773,24 @@ export default function Home() {
           </div>
         </SheetContent>
       </Sheet>
+      {/* Maestro Drawer */}
+      <Sheet open={maestroDrawerOpen} onOpenChange={setMaestroDrawerOpen}>
+        <SheetContent
+          side="right"
+          className="flex w-[380px] flex-col gap-0 p-0 sm:w-[400px] [&>button.absolute]:hidden"
+        >
+          <SheetTitle className="sr-only">Maestro Settings</SheetTitle>
+          <MaestroDrawer
+            enabled={maestroEnabled}
+            rigor={maestroRigor}
+            customInstructions={maestroCustomInstructions}
+            onToggle={setMaestroEnabled}
+            onRigorChange={setMaestroRigor}
+            onCustomInstructionsChange={setMaestroCustomInstructions}
+          />
+        </SheetContent>
+      </Sheet>
+
       {/* Workflow Chat */}
       <Sheet open={workflowChatOpen} onOpenChange={setWorkflowChatOpen}>
         <SheetContent

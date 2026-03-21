@@ -927,7 +927,7 @@ function handleLoopApprove(
 async function handleChainExecute(
   socket: Socket<ClientToServerEvents, ServerToClientEvents>,
   io: Server<ClientToServerEvents, ServerToClientEvents>,
-  data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string; workspaceId?: string; maestro?: boolean },
+  data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string; workspaceId?: string; maestro?: boolean; maestroRigor?: number; maestroCustomInstructions?: string },
 ): Promise<void> {
   const chainId = data.chainId ?? `chain-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
@@ -1125,6 +1125,8 @@ async function handleChainExecute(
       cwd,
       workspaceId: data.workspaceId,
       maestro: data.maestro,
+      maestroRigor: data.maestroRigor,
+      maestroCustomInstructions: data.maestroCustomInstructions,
     }).catch((err: unknown) => {
       socketActiveChains.delete(chainId)
       io.emit('agent:error', {

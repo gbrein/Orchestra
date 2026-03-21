@@ -11,7 +11,7 @@ export interface MaestroOverlayProps {
   readonly status: 'idle' | 'thinking' | 'decided'
   readonly lastAction: 'continue' | 'redirect' | 'conclude' | null
   readonly lastTargetAgent: string | null
-  readonly onToggle: (enabled: boolean) => void
+  readonly onClick: () => void
 }
 
 // ─── Action badge config ────────────────────────────────────────────────────
@@ -30,7 +30,7 @@ export function MaestroOverlay({
   status,
   lastAction,
   lastTargetAgent,
-  onToggle,
+  onClick,
 }: MaestroOverlayProps) {
   if (!visible) return null
 
@@ -42,7 +42,7 @@ export function MaestroOverlay({
     <div className="absolute left-1/2 top-[72px] z-10 -translate-x-1/2">
       <button
         type="button"
-        onClick={() => onToggle(!enabled)}
+        onClick={onClick}
         className={cn(
           'group relative w-[260px] cursor-pointer rounded-xl border backdrop-blur-sm transition-all duration-300',
           enabled
@@ -50,7 +50,7 @@ export function MaestroOverlay({
             : 'border-border/50 bg-card/40 opacity-60 hover:opacity-80',
           isThinking && 'animate-pulse border-purple-400/60 shadow-[0_0_25px_rgba(168,85,247,0.25)]',
         )}
-        title={enabled ? 'Maestro ON — click to disable' : 'Maestro OFF — click to enable'}
+        title="Click to configure Maestro"
       >
         {/* Top accent line */}
         <div className={cn(

@@ -27,6 +27,8 @@ export interface MaestroContext {
   readonly completedStepIndex: number
   readonly totalSteps: number
   readonly memories: readonly string[]
+  readonly rigor?: number
+  readonly customInstructions?: string
 }
 
 export type MaestroAction = 'continue' | 'redirect' | 'conclude'
@@ -179,13 +181,15 @@ ${memoriesBlock}
 - Example for redirect: "Your previous output was missing error handling. Please redo the task with proper try-catch blocks. Original request:\n\n[original objective]"
 - NEVER send a message that is just instructions without the actual work output — the next agent needs the data to work with.
 
+### Criticism level: ${context.rigor ?? 3}/5
+${buildRigorInstructions(context.rigor ?? 3)}
+
 ### Decision logic
 - If output is good enough, use action "continue" and pass a contextualized message WITH the output to the next agent
 - If output is missing something critical, use action "redirect" to retry the same step with better instructions
 - If the workflow objective has been fully achieved before all steps run, use action "conclude"
 - Always explain your reasoning so the user understands your decision
 - If you notice a recurring pattern (e.g., an agent always forgets something), record it as a learning
-- Prefer "continue" over "redirect" — only redirect for truly critical gaps
 
 ### About truncated outputs
 - Agent outputs may be cut off due to token limits — this is NORMAL behavior, NOT an error
@@ -194,7 +198,7 @@ ${memoriesBlock}
 - Pass the truncated output as-is to the next agent — it can still work with partial results
 - Only redirect if the output is fundamentally wrong or missing critical parts, NOT because it was cut short
 
-## Response Format
+${context.customInstructions ? `## Custom Instructions from User\n${context.customInstructions}\n` : ''}## Response Format
 You MUST respond with ONLY a JSON object (no markdown, no code fences):
 {
   "action": "continue" | "redirect" | "conclude",
@@ -203,6 +207,23 @@ You MUST respond with ONLY a JSON object (no markdown, no code fences):
   "reasoning": "<explanation of your decision for the user>",
   "learning": "<pattern observed, or null if none>"
 }`
+}
+
+function buildRigorInstructions(rigor: number): string {
+  switch (rigor) {
+    case 1:
+      return 'You are in RELAXED mode. Almost always continue. Only redirect for critical errors that would make the output unusable. Accept partial or imperfect work.'
+    case 2:
+      return 'You are in LENIENT mode. Accept most outputs. Only redirect when something clearly important is missing. Be forgiving of minor issues.'
+    case 3:
+      return 'You are in BALANCED mode (default). Evaluate fairly. Suggest redirects when meaningful improvements are needed, but not for minor issues. Prefer continuing over redirecting.'
+    case 4:
+      return 'You are in STRICT mode. Hold agents to higher standards. Redirect when output is incomplete, lacks important details, or misses key requirements. Still prefer continue for minor issues.'
+    case 5:
+      return 'You are in DEMANDING mode. Expect comprehensive, production-ready output. Redirect for any significant gap in quality, completeness, or correctness. Only continue when output fully meets expectations.'
+    default:
+      return 'You are in BALANCED mode (default). Evaluate fairly and prefer continuing over redirecting.'
+  }
 }
 
 function buildMaestroUserMessage(context: MaestroContext): string {
