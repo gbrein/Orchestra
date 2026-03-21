@@ -827,6 +827,63 @@ export default function Home() {
     setWorkflowChatOpen(true)
   }, [])
 
+  const handleSaveWorkflowOutput = useCallback(async (content: string) => {
+    // Collect all step outputs from the log
+    const stepOutputs = workflowLog
+      .filter((e) => e.type === 'step_complete' && e.content)
+      .map((e) => `## ${e.agentName ?? 'Agent'}\n\n${e.content}`)
+      .join('\n\n---\n\n')
+
+    const fullOutput = stepOutputs || content
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const filename = `workflow-output-${timestamp}.md`
+
+    // Determine target directory
+    const dir = workspaceWorkingDir || '.'
+
+    try {
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
+      const res = await fetch(`${API_BASE}/api/fs/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ directory: dir, filename, content: fullOutput }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setWorkflowLog((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            type: 'system' as const,
+            content: `Output saved to ${data.data.path}`,
+            timestamp: new Date(),
+          },
+        ])
+      } else {
+        setWorkflowLog((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            type: 'error' as const,
+            content: `Failed to save: ${data.error}`,
+            timestamp: new Date(),
+          },
+        ])
+      }
+    } catch (err) {
+      setWorkflowLog((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: 'error' as const,
+          content: `Failed to save: ${err instanceof Error ? err.message : 'Unknown error'}`,
+          timestamp: new Date(),
+        },
+      ])
+    }
+  }, [workflowLog, workspaceWorkingDir])
+
   const handleAdvisorRequest = useCallback((model: string) => {
     const chainId = lastCompletedChainIdRef.current
     if (!chainId) return
@@ -1821,6 +1878,7 @@ export default function Home() {
             onAdvisorModelChange={setAdvisorModel}
             onApplySkill={handleApplySkill}
             onUpdatePersona={handleUpdatePersona}
+            onSaveOutput={handleSaveWorkflowOutput}
             workingDirectory={workspaceWorkingDir}
             onWorkingDirectoryChange={(dir) => void handleWorkingDirectoryChange(dir)}
             onSendMessage={handleWorkflowSendMessage}

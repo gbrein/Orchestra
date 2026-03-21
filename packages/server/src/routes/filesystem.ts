@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify'
-import { readdir, stat } from 'fs/promises'
+import { readdir, stat, writeFile, mkdir } from 'fs/promises'
 import { join, dirname, resolve, sep } from 'path'
 import { homedir } from 'os'
 import { z } from 'zod'
@@ -40,6 +40,40 @@ export async function filesystemRoutes(app: FastifyInstance) {
         hasGit,
         sep,
       })
+    } catch (error) {
+      sendError(reply, error)
+    }
+  })
+
+  const SaveFileSchema = z.object({
+    directory: z.string().min(1),
+    filename: z.string().min(1).max(255),
+    content: z.string(),
+  })
+
+  app.post('/api/fs/save', async (req, reply) => {
+    try {
+      const { directory, filename, content } = SaveFileSchema.parse(req.body)
+
+      // Prevent path traversal
+      if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+        return sendError(reply, new ValidationError('Invalid filename'))
+      }
+
+      const targetDir = resolve(directory)
+      const targetPath = join(targetDir, filename)
+
+      // Ensure the resolved path is within the target directory
+      if (!targetPath.startsWith(targetDir + sep) && targetPath !== join(targetDir, filename)) {
+        return sendError(reply, new ValidationError('Path traversal detected'))
+      }
+
+      // Ensure directory exists
+      await mkdir(targetDir, { recursive: true })
+
+      await writeFile(targetPath, content, 'utf-8')
+
+      sendSuccess(reply, { path: targetPath })
     } catch (error) {
       sendError(reply, error)
     }
