@@ -1016,13 +1016,20 @@ export default function Home() {
       const usage = workflowStepUsageRef.current.get(data.stepIndex)
 
       setWorkflowLog((prev) => {
-        // Mark the step_start entry as completed (stops spinner)
-        const updated = prev.map((entry) =>
-          entry.type === 'step_start' && entry.stepIndex === data.stepIndex
-            ? { ...entry, completed: true }
-            : entry,
-        )
-        // Append the step_complete entry with output
+        // Mark the step_start entry as completed and remove duplicates
+        const updated = prev
+          .filter((entry) => {
+            // Remove previous step_complete for this step (retry case)
+            if (entry.type === 'step_complete' && entry.stepIndex === data.stepIndex) return false
+            // Remove step_text for this step (output already shown in step_complete)
+            if (entry.type === 'step_text' && entry.stepIndex === data.stepIndex) return false
+            return true
+          })
+          .map((entry) =>
+            entry.type === 'step_start' && entry.stepIndex === data.stepIndex
+              ? { ...entry, completed: true }
+              : entry,
+          )
         return [
           ...updated,
           {
