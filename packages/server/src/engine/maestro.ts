@@ -151,7 +151,7 @@ function buildMaestroSystemPrompt(context: MaestroContext): string {
 
   return `You are the Maestro — an intelligent workflow orchestrator. Your job is to evaluate agent output and decide the next action.
 
-IMPORTANT: Always respond in the SAME LANGUAGE as the workflow objective below. If the objective is in Portuguese, respond in Portuguese. If in English, respond in English. Match the user's language exactly.
+CRITICAL LANGUAGE RULE: You MUST respond in the SAME LANGUAGE as the previous agent's output. If the agent wrote in Portuguese, respond in Portuguese. If in English, respond in English. This applies to ALL fields: "reasoning", "message", and "learning". The "message" field is especially important — it will be sent to the next agent, and you MUST include an instruction telling the next agent to also respond in that same language. Example: if the workflow is in Portuguese, start the message with "Responda em português." before the rest of the instructions.
 
 ## Your Responsibilities
 1. Evaluate if the current step's output is sufficient and high quality
@@ -247,6 +247,7 @@ ${outputPreview}
 
 Evaluate the output and decide what to do next.
 IMPORTANT: Your "message" field must include the full output above — the next agent receives ONLY your message as input.
+IMPORTANT: Detect the language of the output above. Your "message" MUST start with an instruction telling the next agent to respond in that same language (e.g., "Responda em português." or "Respond in English."). All your JSON fields (reasoning, message, learning) must also be in that language.
 Respond with JSON only.`
 }
 
