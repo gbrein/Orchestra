@@ -42,3 +42,6 @@ coverage/
 
 # Orchestra local data
 .orchestra/
+
+# Claude Code
+.claude/
