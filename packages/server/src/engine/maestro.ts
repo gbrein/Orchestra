@@ -187,6 +187,13 @@ ${memoriesBlock}
 - If you notice a recurring pattern (e.g., an agent always forgets something), record it as a learning
 - Prefer "continue" over "redirect" — only redirect for truly critical gaps
 
+### About truncated outputs
+- Agent outputs may be cut off due to token limits — this is NORMAL behavior, NOT an error
+- If an output appears truncated (ends mid-sentence, has "[... truncated ...]"), do NOT redirect
+- Treat truncated output as complete work — the agent did its best within its token budget
+- Pass the truncated output as-is to the next agent — it can still work with partial results
+- Only redirect if the output is fundamentally wrong or missing critical parts, NOT because it was cut short
+
 ## Response Format
 You MUST respond with ONLY a JSON object (no markdown, no code fences):
 {
@@ -199,8 +206,8 @@ You MUST respond with ONLY a JSON object (no markdown, no code fences):
 }
 
 function buildMaestroUserMessage(context: MaestroContext): string {
-  const outputPreview = context.currentStepOutput.length > 2000
-    ? context.currentStepOutput.slice(0, 2000) + '\n\n[... output truncated ...]'
+  const outputPreview = context.currentStepOutput.length > 6000
+    ? context.currentStepOutput.slice(0, 6000) + '\n\n[... output truncated for context window ...]'
     : context.currentStepOutput
 
   const currentAgent = context.agents[context.completedStepIndex]
