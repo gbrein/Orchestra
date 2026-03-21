@@ -1411,7 +1411,23 @@ export default function Home() {
   }, [nodes, edges, canvasLoaded, saveCanvas])
 
   const handleNodesChange = useCallback((updated: Node[]) => {
-    setNodes(updated)
+    // Detect removed nodes and clean up edges + DB
+    setNodes((prev) => {
+      const removedIds = new Set(
+        prev.filter((n) => !updated.some((u) => u.id === n.id)).map((n) => n.id),
+      )
+      if (removedIds.size > 0) {
+        // Remove edges connected to deleted nodes
+        setEdges((prevEdges) =>
+          prevEdges.filter((e) => !removedIds.has(e.source) && !removedIds.has(e.target)),
+        )
+        // Best-effort DB cleanup for agent nodes
+        for (const id of removedIds) {
+          void apiDelete(`/api/agents/${id}`).catch(() => {})
+        }
+      }
+      return updated
+    })
   }, [])
 
   return (
