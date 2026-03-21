@@ -24,7 +24,7 @@ interface UseCanvasPersistenceReturn {
   loadCanvas: () => Promise<{ nodes: Node[]; edges: Edge[] } | null>
   saveCanvas: (nodes: Node[], edges: Edge[]) => void
   switchWorkspace: (id: string) => Promise<{ nodes: Node[]; edges: Edge[] } | null>
-  createWorkspace: (name: string) => Promise<string>
+  createWorkspace: (name: string, workingDirectory?: string) => Promise<string>
   renameWorkspace: (id: string, name: string) => Promise<void>
   deleteWorkspace: (id: string) => Promise<void>
 }
@@ -145,9 +145,9 @@ export function useCanvasPersistence(): UseCanvasPersistenceReturn {
   }, [loadCanvasForWorkspace])
 
   // Create a new workspace
-  const createWorkspace = useCallback(async (name: string): Promise<string> => {
+  const createWorkspace = useCallback(async (name: string, workingDirectory?: string): Promise<string> => {
     try {
-      const created = await apiPost<PersistWorkspace>('/api/workspaces', { name })
+      const created = await apiPost<PersistWorkspace>('/api/workspaces', { name, workingDirectory })
       setWorkspaces((prev) => [...prev, created])
       activeIdRef.current = created.id
       setActiveWorkspaceId(created.id)

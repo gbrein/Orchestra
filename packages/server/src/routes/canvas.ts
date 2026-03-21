@@ -6,6 +6,7 @@ import { sendSuccess, sendError, NotFoundError, ValidationError } from '../lib/e
 
 const CreateWorkspaceSchema = z.object({
   name: z.string().min(1).max(100),
+  workingDirectory: z.string().max(500).optional(),
 })
 
 const UpdateWorkspaceSchema = z.object({

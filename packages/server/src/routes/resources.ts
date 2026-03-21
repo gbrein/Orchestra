@@ -200,6 +200,7 @@ export async function resourceRoutes(app: FastifyInstance) {
           workspaceId,
           data.filename,
           buffer,
+          workspace.workingDirectory,
         )
 
         // Name field can be overridden via a multipart field named "name"
@@ -314,9 +315,10 @@ export async function resourceRoutes(app: FastifyInstance) {
 
         // If it is a file resource, remove the file from disk first
         if (resource.type === 'file' && resource.filePath) {
+          const ws = await prisma.workspace.findUnique({ where: { id: workspaceId }, select: { workingDirectory: true } })
           const storedName = resource.filePath.split('/').pop() ?? resource.filePath.split('\\').pop() ?? ''
           if (storedName) {
-            await deleteFile(workspaceId, storedName).catch(() => {
+            await deleteFile(workspaceId, storedName, ws?.workingDirectory).catch(() => {
               // Best-effort — continue with DB deletion even if file removal fails
             })
           }

@@ -44,7 +44,9 @@ export async function buildWorkspaceContext(workspaceId: string): Promise<Worksp
   const variableResources = resources.filter((r) => r.type === 'variable')
 
   // Files — add the workspace files directory once if any file resources exist
-  if (fileResources.length > 0) {
+  // When workingDirectory is set, resources are inside the project — no need for addDirs
+  // since the agent already runs in that directory. Only add if using legacy storage.
+  if (fileResources.length > 0 && !workspace?.workingDirectory) {
     addDirs.push(getWorkspaceFilesDir(workspaceId))
 
     const manifestEntries = fileResources.map((r) => {

@@ -475,9 +475,10 @@ export default function Home() {
     }, 300)
   }, [nodes, edges, saveCanvas, switchWorkspace])
 
-  const handleCreateWorkspace = useCallback(async (name: string) => {
+  const handleCreateWorkspace = useCallback(async (name: string, workingDirectory?: string) => {
     if (nodes.length > 0) saveCanvas(nodes, edges)
-    await createWorkspace(name)
+    await createWorkspace(name, workingDirectory)
+    if (workingDirectory) setWorkspaceWorkingDir(workingDirectory)
     setNodes([])
     setEdges([])
     setShowHome(false)
