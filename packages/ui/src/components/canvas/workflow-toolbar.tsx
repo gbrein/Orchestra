@@ -60,7 +60,7 @@ export function WorkflowToolbar({
           {!currentStep && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Loader2 className="h-3 w-3 animate-spin text-primary" aria-hidden />
-              <span>Running…</span>
+              <span>Running...</span>
             </div>
           )}
         </>
@@ -87,6 +87,7 @@ export function WorkflowToolbar({
       >
         <MessageSquare className="h-3.5 w-3.5" aria-hidden />
       </Button>
+
     </div>
   )
 }

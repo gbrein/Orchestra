@@ -33,8 +33,10 @@ export interface ClientToServerEvents {
   'loop:stop': (data: { agentId: string }) => void
   'loop:approve': (data: { agentId: string; loopId: string; approved: boolean }) => void
   'agent:set_mode': (data: { agentId: string; mode: AgentMode }) => void
-  'chain:execute': (data: { chainId?: string; definition: ChainDefinition; initialMessage: string; workspaceId?: string }) => void
+  'chain:execute': (data: { chainId?: string; definition: ChainDefinition; initialMessage: string; workspaceId?: string; maestro?: boolean }) => void
   'chain:stop': (data: { chainId: string }) => void
+  'chain:maestro_redirect_response': (data: { chainId: string; requestId: string; approved: boolean }) => void
+  'advisor:analyze': (data: { chainId: string; model?: string }) => void
 }
 
 // Server -> Client events
@@ -59,6 +61,11 @@ export interface ServerToClientEvents {
   'chain:step_complete': (data: { chainId: string; stepIndex: number; agentId: string; output: string }) => void
   'chain:complete': (data: { chainId: string; totalSteps: number }) => void
   'chain:error': (data: { chainId: string; stepIndex: number; error: string }) => void
+  'chain:maestro_decision': (data: { chainId: string; reasoning: string; action: 'continue' | 'redirect' | 'conclude'; targetAgentName: string; message: string }) => void
+  'chain:maestro_redirect_request': (data: { chainId: string; reasoning: string; fromAgent: string; toAgent: string; requestId: string }) => void
+  'advisor:analyzing': (data: { chainId: string }) => void
+  'advisor:result': (data: { chainId: string; result: { overallAssessment: string; objectiveMet: boolean; suggestions: Array<{ id: string; category: string; title: string; description: string; actionType?: string | null; actionPayload?: { agentId?: string; agentName?: string; skillName?: string; newPersona?: string }; severity: string }> } }) => void
+  'advisor:error': (data: { chainId: string; error: string }) => void
   'notification': (data: { id: string; level: 'info' | 'action_required' | 'critical' | 'error'; title: string; agentId?: string; actions?: string[] }) => void
   'canvas:updated': (data: { workspaceId: string }) => void
 }

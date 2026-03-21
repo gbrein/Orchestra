@@ -14,6 +14,7 @@ import {
   ChevronUp,
   FolderOpen,
   GitBranch,
+  Lightbulb,
   Loader2,
   Play,
   Save,
@@ -31,6 +32,7 @@ import { cn } from '@/lib/utils'
 import { ModeToggle } from '@/components/panels/mode-toggle'
 import { ToolCard, type ToolCardData } from '@/components/shared/tool-card'
 import { FolderPicker } from '@/components/shared/folder-picker'
+import { AdvisorCard, type AdvisorResultData } from '@/components/panels/advisor-card'
 import type { AgentMode, TokenUsage } from '@orchestra/shared'
 import type { ChainStep } from '@/lib/chain-utils'
 
@@ -48,6 +50,13 @@ export interface WorkflowLogEntry {
     | 'chain_complete'
     | 'error'
     | 'system'
+    | 'maestro_thinking'
+    | 'maestro_decision'
+    | 'maestro_redirect_request'
+    | 'maestro_redirect_approved'
+    | 'maestro_redirect_declined'
+    | 'advisor_analyzing'
+    | 'advisor_result'
   readonly content: string
   readonly agentName?: string
   readonly stepIndex?: number
@@ -57,6 +66,9 @@ export interface WorkflowLogEntry {
   readonly toolUse?: ToolCardData
   readonly cwd?: string
   readonly usage?: TokenUsage
+  readonly maestroAction?: 'continue' | 'redirect' | 'conclude'
+  readonly requestId?: string
+  readonly advisorResult?: AdvisorResultData
 }
 
 export interface WorkflowChatProps {
@@ -65,6 +77,7 @@ export interface WorkflowChatProps {
   readonly log: readonly WorkflowLogEntry[]
   readonly mode: AgentMode
   readonly hasWorkspace: boolean
+  readonly maestroEnabled: boolean
   readonly workingDirectory?: string | null
   readonly onWorkingDirectoryChange?: (dir: string | null) => void
   readonly onSendMessage: (message: string) => void
@@ -73,11 +86,32 @@ export interface WorkflowChatProps {
   readonly onModeChange: (mode: AgentMode) => void
   readonly onClearLog: () => void
   readonly onStepClick?: (stepIndex: number) => void
+  readonly onMaestroToggle: (enabled: boolean) => void
+  readonly onMaestroRedirectRespond?: (requestId: string, approved: boolean) => void
+  readonly hasCompletedRun: boolean
+  readonly advisorRunning: boolean
+  readonly advisorModel: string
+  readonly onAdvisorRequest: (model: string) => void
+  readonly onAdvisorModelChange: (model: string) => void
+  readonly onApplySkill: (agentId: string, skillName: string) => Promise<void>
+  readonly onUpdatePersona: (agentId: string, newPersona: string) => Promise<void>
 }
 
 // ─── Log entry component ────────────────────────────────────────────────────
 
-function LogEntry({ entry, onStepClick }: { readonly entry: WorkflowLogEntry; readonly onStepClick?: (stepIndex: number) => void }) {
+function LogEntry({
+  entry,
+  onStepClick,
+  onMaestroRedirectRespond,
+  onApplySkill,
+  onUpdatePersona,
+}: {
+  readonly entry: WorkflowLogEntry
+  readonly onStepClick?: (stepIndex: number) => void
+  readonly onMaestroRedirectRespond?: (requestId: string, approved: boolean) => void
+  readonly onApplySkill?: (agentId: string, skillName: string) => Promise<void>
+  readonly onUpdatePersona?: (agentId: string, newPersona: string) => Promise<void>
+}) {
   if (entry.type === 'user') {
     return (
       <div className="flex justify-end" role="listitem">
@@ -198,6 +232,104 @@ function LogEntry({ entry, onStepClick }: { readonly entry: WorkflowLogEntry; re
     )
   }
 
+  if (entry.type === 'maestro_thinking') {
+    return (
+      <div className="flex items-center gap-2 rounded-md bg-purple-500/10 px-3 py-2 text-xs text-purple-400" role="listitem">
+        <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+        <span className="font-medium">Maestro evaluating...</span>
+      </div>
+    )
+  }
+
+  if (entry.type === 'maestro_decision') {
+    const actionIcon = entry.maestroAction === 'conclude'
+      ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" aria-hidden />
+      : entry.maestroAction === 'redirect'
+        ? <AlertCircle className="h-3.5 w-3.5 text-amber-400" aria-hidden />
+        : <Bot className="h-3.5 w-3.5 text-purple-400" aria-hidden />
+
+    return (
+      <div className="rounded-md border border-purple-500/20 bg-purple-500/5 px-3 py-2" role="listitem">
+        <div className="flex items-center gap-2 text-xs font-medium text-purple-400">
+          {actionIcon}
+          <span>Maestro</span>
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-purple-500/30 text-purple-400">
+            {entry.maestroAction}
+          </Badge>
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">{entry.content}</p>
+      </div>
+    )
+  }
+
+  if (entry.type === 'maestro_redirect_request') {
+    return (
+      <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2.5" role="listitem">
+        <div className="flex items-center gap-2 text-xs font-medium text-amber-400">
+          <AlertCircle className="h-3.5 w-3.5" aria-hidden />
+          <span>Maestro suggests redirect</span>
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">{entry.content}</p>
+        {entry.requestId && onMaestroRedirectRespond && (
+          <div className="mt-2 flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 px-3 text-xs border-amber-500/30 text-amber-400 hover:bg-amber-500/20"
+              onClick={() => onMaestroRedirectRespond(entry.requestId!, true)}
+            >
+              Approve Redirect
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-3 text-xs text-muted-foreground"
+              onClick={() => onMaestroRedirectRespond(entry.requestId!, false)}
+            >
+              Continue Forward
+            </Button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  if (entry.type === 'maestro_redirect_approved') {
+    return (
+      <div className="flex items-center gap-2 text-xs text-amber-400" role="listitem">
+        <Check className="h-3 w-3" aria-hidden />
+        <span>Redirect approved — re-running {entry.agentName}</span>
+      </div>
+    )
+  }
+
+  if (entry.type === 'maestro_redirect_declined') {
+    return (
+      <div className="flex items-center gap-2 text-xs text-muted-foreground" role="listitem">
+        <span>Redirect declined — continuing forward</span>
+      </div>
+    )
+  }
+
+  if (entry.type === 'advisor_analyzing') {
+    return (
+      <div className="flex items-center gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-400" role="listitem">
+        <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+        <span className="font-medium">Advisor analyzing workflow...</span>
+      </div>
+    )
+  }
+
+  if (entry.type === 'advisor_result' && entry.advisorResult) {
+    return (
+      <AdvisorCard
+        result={entry.advisorResult}
+        onApplySkill={onApplySkill ?? (async () => {})}
+        onUpdatePersona={onUpdatePersona ?? (async () => {})}
+      />
+    )
+  }
+
   // system
   return (
     <div className="text-center text-[10px] text-muted-foreground" role="listitem">
@@ -222,6 +354,16 @@ export function WorkflowChat({
   onClearLog,
   onStepClick,
   hasWorkspace,
+  maestroEnabled,
+  onMaestroToggle,
+  onMaestroRedirectRespond,
+  hasCompletedRun,
+  advisorRunning,
+  advisorModel,
+  onAdvisorRequest,
+  onAdvisorModelChange,
+  onApplySkill,
+  onUpdatePersona,
 }: WorkflowChatProps) {
   const [value, setValue] = useState('')
   const [dirExpanded, setDirExpanded] = useState(false)
@@ -286,6 +428,26 @@ export function WorkflowChat({
               </span>
             </div>
           </div>
+          {/* Maestro toggle — prominent in header */}
+          <button
+            type="button"
+            className={cn(
+              'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all border',
+              maestroEnabled
+                ? 'bg-purple-500/20 text-purple-400 border-purple-500/40 shadow-[0_0_8px_rgba(168,85,247,0.15)]'
+                : 'bg-muted text-muted-foreground border-border hover:text-foreground hover:border-muted-foreground/50',
+            )}
+            onClick={() => onMaestroToggle(!maestroEnabled)}
+            disabled={isRunning}
+            title={maestroEnabled ? 'Maestro is ON — intelligent orchestration between steps' : 'Maestro is OFF — linear execution'}
+          >
+            <Bot className="h-3.5 w-3.5" aria-hidden />
+            Maestro
+            <span className={cn(
+              'inline-block h-2 w-2 rounded-full transition-colors',
+              maestroEnabled ? 'bg-purple-400 shadow-[0_0_4px_rgba(168,85,247,0.5)]' : 'bg-muted-foreground/40',
+            )} />
+          </button>
         </div>
 
         {/* Mode toggle */}
@@ -304,6 +466,41 @@ export function WorkflowChat({
           >
             <Trash2 className="h-3 w-3" aria-hidden />
             Clear
+          </Button>
+          <div className="flex-1" />
+          <select
+            value={advisorModel}
+            onChange={(e) => onAdvisorModelChange(e.target.value)}
+            className="h-7 rounded-md border border-border bg-background px-1.5 text-[10px] text-muted-foreground"
+            disabled={isRunning || advisorRunning}
+            aria-label="Advisor model"
+          >
+            <option value="claude-haiku-4-5-20251001">Haiku</option>
+            <option value="claude-sonnet-4-6-20250610">Sonnet</option>
+            <option value="claude-opus-4-6-20250610">Opus</option>
+          </select>
+          <Button
+            size="sm"
+            variant="ghost"
+            className={cn(
+              'h-7 gap-1.5 px-2 text-xs',
+              advisorRunning
+                ? 'text-amber-400'
+                : hasCompletedRun
+                  ? 'text-amber-400/80 hover:text-amber-400'
+                  : 'text-muted-foreground',
+            )}
+            disabled={isRunning || !hasCompletedRun || advisorRunning}
+            onClick={() => onAdvisorRequest(advisorModel)}
+            aria-label="Analyze workflow with Advisor"
+            title={!hasCompletedRun ? 'Run the workflow at least once first' : 'Analyze workflow and suggest improvements'}
+          >
+            {advisorRunning ? (
+              <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+            ) : (
+              <Lightbulb className="h-3 w-3" aria-hidden />
+            )}
+            Advisor
           </Button>
         </div>
 
@@ -430,7 +627,7 @@ export function WorkflowChat({
         ) : (
           <>
             {log.map((entry) => (
-              <LogEntry key={entry.id} entry={entry} onStepClick={onStepClick} />
+              <LogEntry key={entry.id} entry={entry} onStepClick={onStepClick} onMaestroRedirectRespond={onMaestroRedirectRespond} onApplySkill={onApplySkill} onUpdatePersona={onUpdatePersona} />
             ))}
             <div ref={bottomRef} aria-hidden />
           </>

@@ -16,6 +16,8 @@ import { apiPost, apiDelete } from '@/lib/api'
 import { createResourceNode } from '@/lib/canvas-utils'
 import { OrchestraCanvas, type UndoRedoControls } from '@/components/canvas/orchestra-canvas'
 import { WorkflowToolbar } from '@/components/canvas/workflow-toolbar'
+import { MaestroOverlay } from '@/components/canvas/maestro-overlay'
+import { AdvisorFab } from '@/components/canvas/advisor-fab'
 import { WorkflowChat, type WorkflowLogEntry } from '@/components/panels/workflow-chat'
 import { hasAgentChain, buildChain } from '@/lib/chain-utils'
 import { getSocket } from '@/lib/socket'
@@ -113,6 +115,12 @@ export default function Home() {
   const [workflowChatOpen, setWorkflowChatOpen] = useState(false)
   const [workflowLog, setWorkflowLog] = useState<WorkflowLogEntry[]>([])
   const [workflowMode, setWorkflowMode] = useState<import('@orchestra/shared').AgentMode>('default')
+  const [maestroEnabled, setMaestroEnabled] = useState(true)
+  const [maestroStatus, setMaestroStatus] = useState<'idle' | 'thinking' | 'decided'>('idle')
+  const [maestroLastAction, setMaestroLastAction] = useState<'continue' | 'redirect' | 'conclude' | null>(null)
+  const [maestroLastTargetAgent, setMaestroLastTargetAgent] = useState<string | null>(null)
+  const [advisorRunning, setAdvisorRunning] = useState(false)
+  const [advisorModel, setAdvisorModel] = useState('claude-haiku-4-5-20251001')
   const [workspaceWorkingDir, setWorkspaceWorkingDir] = useState<string | null>(null)
   const [createAgentOpen, setCreateAgentOpen] = useState(false)
   const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false)
@@ -767,8 +775,9 @@ export default function Home() {
       definition,
       initialMessage: message,
       workspaceId: activeWorkspaceId ?? undefined,
+      maestro: maestroEnabled,
     })
-  }, [nodes, edges, workflowMode, activeWorkspaceId])
+  }, [nodes, edges, workflowMode, activeWorkspaceId, maestroEnabled])
 
   const handleStopWorkflow = useCallback(() => {
     const chainId = workflowChainIdRef.current
@@ -778,6 +787,9 @@ export default function Home() {
     }
     setWorkflowRunning(false)
     setWorkflowStep(null)
+    setMaestroStatus('idle')
+    setMaestroLastAction(null)
+    setMaestroLastTargetAgent(null)
     setWorkflowLog((prev) => [
       ...prev,
       {
@@ -809,8 +821,54 @@ export default function Home() {
     setWorkflowChatOpen(true)
   }, [])
 
+  const handleAdvisorRequest = useCallback((model: string) => {
+    const chainId = lastCompletedChainIdRef.current
+    if (!chainId) return
+    const sock = getSocket()
+    sock.emit('advisor:analyze', { chainId, model })
+  }, [])
+
+  const handleApplySkill = useCallback(async (agentId: string, skillName: string) => {
+    const installRes = await apiPost<{ id: string }>('/api/skills/install', {
+      name: skillName,
+      source: 'marketplace',
+    })
+    await apiPost(`/api/agents/${agentId}/skills/${installRes.id}`, {})
+  }, [])
+
+  const handleUpdatePersona = useCallback(async (agentId: string, newPersona: string) => {
+    await apiPatch(`/api/agents/${agentId}`, { persona: newPersona })
+  }, [])
+
+  const handleMaestroRedirectRespond = useCallback((requestId: string, approved: boolean) => {
+    const chainId = workflowChainIdRef.current
+    if (!chainId) return
+
+    const sock = getSocket()
+    sock.emit('chain:maestro_redirect_response', { chainId, requestId, approved })
+
+    // Update log: remove the request entry and add result
+    setWorkflowLog((prev) => {
+      const updated = prev.map((e) =>
+        e.type === 'maestro_redirect_request' && e.requestId === requestId
+          ? { ...e, requestId: undefined }
+          : e,
+      )
+      return [
+        ...updated,
+        {
+          id: crypto.randomUUID(),
+          type: approved ? 'maestro_redirect_approved' as WorkflowLogEntry['type'] : 'maestro_redirect_declined' as WorkflowLogEntry['type'],
+          content: approved ? 'Redirect approved' : 'Continuing forward',
+          timestamp: new Date(),
+        },
+      ]
+    })
+  }, [])
+
   // Track current chain ID, steps, per-step usage, per-step chat messages, and accumulated text
   const workflowChainIdRef = useRef<string>('')
+  const lastCompletedChainIdRef = useRef<string>('')
   const workflowStepsRef = useRef<ReturnType<typeof buildChain>>([])
   const workflowStepUsageRef = useRef<Map<number, import('@orchestra/shared').TokenUsage>>(new Map())
   const workflowStepMsgsRef = useRef<Map<number, ChatMessage[]>>(new Map())
@@ -994,6 +1052,9 @@ export default function Home() {
       if (data.chainId !== workflowChainIdRef.current) return
       setWorkflowRunning(false)
       setWorkflowStep(null)
+      setMaestroStatus('idle')
+      setMaestroLastAction(null)
+      lastCompletedChainIdRef.current = data.chainId
 
       // Calculate total usage across all steps
       let totalIn = 0
@@ -1035,6 +1096,114 @@ export default function Home() {
           timestamp: new Date(),
         },
       ])
+    })
+
+    // Maestro events
+    socket.on('chain:maestro_decision', (data) => {
+      if (data.chainId !== workflowChainIdRef.current) return
+
+      // Detect "thinking" vs actual decision
+      const isThinking = data.reasoning === 'Evaluating step output...'
+      if (isThinking) {
+        setMaestroStatus('thinking')
+        return
+      }
+
+      // Update canvas-level maestro status
+      setMaestroStatus('decided')
+      setMaestroLastAction(data.action)
+      setMaestroLastTargetAgent(data.targetAgentName || null)
+      // Reset to idle after a moment so the badge fades
+      setTimeout(() => {
+        setMaestroStatus('idle')
+        setMaestroLastAction(null)
+        setMaestroLastTargetAgent(null)
+      }, 4000)
+
+      // Replace any existing "thinking" entry with the actual decision
+      setWorkflowLog((prev) => {
+        const withoutThinking = prev.filter((e) => e.type !== 'maestro_thinking')
+        const entryType: WorkflowLogEntry['type'] = 'maestro_decision'
+        return [
+          ...withoutThinking,
+          {
+            id: crypto.randomUUID(),
+            type: entryType,
+            content: data.reasoning,
+            maestroAction: data.action,
+            timestamp: new Date(),
+          },
+        ]
+      })
+    })
+
+    socket.on('chain:maestro_redirect_request', (data) => {
+      if (data.chainId !== workflowChainIdRef.current) return
+
+      const entryType: WorkflowLogEntry['type'] = 'maestro_redirect_request'
+      setWorkflowLog((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: entryType,
+          content: data.reasoning,
+          agentName: data.toAgent,
+          requestId: data.requestId,
+          timestamp: new Date(),
+        },
+      ])
+    })
+
+    // Advisor events
+    socket.on('advisor:analyzing', (data) => {
+      if (data.chainId !== lastCompletedChainIdRef.current) return
+      setAdvisorRunning(true)
+      const entryType: WorkflowLogEntry['type'] = 'advisor_analyzing'
+      setWorkflowLog((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: entryType,
+          content: 'Analyzing workflow run...',
+          timestamp: new Date(),
+        },
+      ])
+    })
+
+    socket.on('advisor:result', (data) => {
+      if (data.chainId !== lastCompletedChainIdRef.current) return
+      setAdvisorRunning(false)
+      const entryType: WorkflowLogEntry['type'] = 'advisor_result'
+      setWorkflowLog((prev) => {
+        const withoutAnalyzing = prev.filter((e) => e.type !== 'advisor_analyzing')
+        return [
+          ...withoutAnalyzing,
+          {
+            id: crypto.randomUUID(),
+            type: entryType,
+            content: data.result.overallAssessment,
+            advisorResult: data.result,
+            timestamp: new Date(),
+          },
+        ]
+      })
+    })
+
+    socket.on('advisor:error', (data) => {
+      if (data.chainId !== lastCompletedChainIdRef.current) return
+      setAdvisorRunning(false)
+      setWorkflowLog((prev) => {
+        const withoutAnalyzing = prev.filter((e) => e.type !== 'advisor_analyzing')
+        return [
+          ...withoutAnalyzing,
+          {
+            id: crypto.randomUUID(),
+            type: 'error' as const,
+            content: `Advisor analysis failed: ${data.error}`,
+            timestamp: new Date(),
+          },
+        ]
+      })
     })
 
     // Listen for executor-level errors (e.g. agent not found, chain execution failed)
@@ -1227,6 +1396,20 @@ export default function Home() {
                 onRun={handleOpenWorkflowChat}
                 onStop={handleStopWorkflow}
                 onOpenChat={handleOpenWorkflowChat}
+              />
+              <MaestroOverlay
+                visible={hasAgentChain(nodes, edges)}
+                enabled={maestroEnabled}
+                status={maestroStatus}
+                lastAction={maestroLastAction}
+                lastTargetAgent={maestroLastTargetAgent}
+                onToggle={setMaestroEnabled}
+              />
+              <AdvisorFab
+                visible={hasAgentChain(nodes, edges)}
+                running={advisorRunning}
+                disabled={!lastCompletedChainIdRef.current || workflowRunning}
+                onClick={() => handleAdvisorRequest(advisorModel)}
               />
               <OrchestraCanvas
                 initialNodes={nodes}
@@ -1597,6 +1780,16 @@ export default function Home() {
             log={workflowLog}
             mode={workflowMode}
             hasWorkspace={!!activeWorkspaceId}
+            maestroEnabled={maestroEnabled}
+            onMaestroToggle={setMaestroEnabled}
+            onMaestroRedirectRespond={handleMaestroRedirectRespond}
+            hasCompletedRun={!!lastCompletedChainIdRef.current}
+            advisorRunning={advisorRunning}
+            advisorModel={advisorModel}
+            onAdvisorRequest={handleAdvisorRequest}
+            onAdvisorModelChange={setAdvisorModel}
+            onApplySkill={handleApplySkill}
+            onUpdatePersona={handleUpdatePersona}
             workingDirectory={workspaceWorkingDir}
             onWorkingDirectoryChange={(dir) => void handleWorkingDirectoryChange(dir)}
             onSendMessage={handleWorkflowSendMessage}

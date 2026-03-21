@@ -12,6 +12,8 @@ import type { AgentRecord } from '../discussion/moderator'
 import type { ParticipantRole, DiscussionFormat } from '@orchestra/shared'
 import { LoopEngine } from '../engine/loop-engine'
 import { ChainExecutor } from '../engine/chain-executor'
+import { WorkflowAdvisor } from '../engine/advisor'
+import { SKILL_CATALOG } from '../skills/catalog'
 import { recordActivity } from '../services/activity'
 import type { ChainDefinition as ChainDefinitionPayload } from '@orchestra/shared'
 import type { ChainDefinition } from '../engine/chain-executor'
@@ -282,12 +284,20 @@ export function registerSocketHandlers(
       void handleAgentSetMode(socket, io, processManager, approvalManager, data)
     })
 
-    socket.on('chain:execute', (data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string; workspaceId?: string }) => {
+    socket.on('chain:execute', (data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string; workspaceId?: string; maestro?: boolean }) => {
       void handleChainExecute(socket, io, data)
     })
 
     socket.on('chain:stop', (data: { chainId: string }) => {
       handleChainStop(socket, io, data)
+    })
+
+    socket.on('chain:maestro_redirect_response', (data: { chainId: string; requestId: string; approved: boolean }) => {
+      handleMaestroRedirectResponse(data)
+    })
+
+    socket.on('advisor:analyze', (data: { chainId: string; model?: string }) => {
+      void handleAdvisorAnalyze(socket, io, data)
     })
   })
 }
@@ -917,7 +927,7 @@ function handleLoopApprove(
 async function handleChainExecute(
   socket: Socket<ClientToServerEvents, ServerToClientEvents>,
   io: Server<ClientToServerEvents, ServerToClientEvents>,
-  data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string; workspaceId?: string },
+  data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string; workspaceId?: string; maestro?: boolean },
 ): Promise<void> {
   const chainId = data.chainId ?? `chain-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
@@ -1072,9 +1082,49 @@ async function handleChainExecute(
       }).catch(() => {})
     })
 
+    // Maestro event forwarding
+    executor.on('step_maestro_thinking', (stepData) => {
+      // Emit a lightweight "thinking" event so the UI can show a spinner
+      io.emit('chain:maestro_decision', {
+        chainId,
+        reasoning: 'Evaluating step output...',
+        action: 'continue',
+        targetAgentName: '',
+        message: '',
+      })
+    })
+
+    executor.on('step_maestro', (stepData) => {
+      const { decision } = stepData
+      io.emit('chain:maestro_decision', {
+        chainId,
+        reasoning: decision.reasoning,
+        action: decision.action,
+        targetAgentName: '',
+        message: decision.message,
+      })
+    })
+
+    executor.on('step_maestro_redirect_request', (stepData) => {
+      const { decision, requestId } = stepData
+      // Look up agent names for display
+      const steps = data.definition.steps
+      const fromAgent = steps[stepData.stepIndex]?.agentId ?? 'unknown'
+      const toAgent = steps[decision.targetStepIndex]?.agentId ?? 'unknown'
+
+      io.emit('chain:maestro_redirect_request', {
+        chainId,
+        reasoning: decision.reasoning,
+        fromAgent,
+        toAgent,
+        requestId,
+      })
+    })
+
     executor.execute(data.definition as ChainDefinition, data.initialMessage, {
       cwd,
       workspaceId: data.workspaceId,
+      maestro: data.maestro,
     }).catch((err: unknown) => {
       socketActiveChains.delete(chainId)
       io.emit('agent:error', {
@@ -1125,6 +1175,103 @@ function handleChainStop(
     level: 'info',
     title: `Chain ${chainId} stopped`,
   })
+}
+
+// ------------------------------------------------------------------
+// Advisor handler
+// ------------------------------------------------------------------
+
+async function handleAdvisorAnalyze(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents>,
+  io: Server<ClientToServerEvents, ServerToClientEvents>,
+  data: { chainId: string; model?: string },
+): Promise<void> {
+  const { chainId } = data
+  const model = data.model ?? 'claude-haiku-4-5-20251001'
+
+  try {
+    const chainRun = await prisma.chainRun.findUnique({
+      where: { chainId },
+      include: { steps: { orderBy: { stepIndex: 'asc' } } },
+    })
+
+    if (!chainRun || chainRun.status !== 'completed') {
+      socket.emit('advisor:error', { chainId, error: 'No completed workflow run found for this chain.' })
+      return
+    }
+
+    // Load agent metadata
+    const agentIds = [...new Set(chainRun.steps.map((s) => s.agentId))]
+    const agents = await prisma.agent.findMany({
+      where: { id: { in: agentIds } },
+      select: { id: true, name: true, persona: true },
+    })
+    const agentMap = new Map(agents.map((a) => [a.id, a]))
+
+    io.emit('advisor:analyzing', { chainId })
+
+    const advisor = new WorkflowAdvisor()
+    const result = await advisor.analyze(
+      {
+        initialMessage: chainRun.initialMessage,
+        agents: agents.map((a) => ({
+          name: a.name,
+          persona: a.persona ?? '',
+          agentId: a.id,
+        })),
+        stepResults: chainRun.steps.map((s) => ({
+          stepIndex: s.stepIndex,
+          agentName: agentMap.get(s.agentId)?.name ?? s.agentName ?? s.agentId,
+          agentId: s.agentId,
+          output: s.output,
+          tokensIn: s.tokensIn,
+          tokensOut: s.tokensOut,
+          status: s.status,
+        })),
+        availableSkills: SKILL_CATALOG.map((s) => ({
+          name: s.name,
+          description: s.description,
+          category: s.category,
+        })),
+      },
+      model,
+    )
+
+    io.emit('advisor:result', {
+      chainId,
+      result: {
+        overallAssessment: result.overallAssessment,
+        objectiveMet: result.objectiveMet,
+        suggestions: result.suggestions.map((s) => ({
+          id: s.id,
+          category: s.category,
+          title: s.title,
+          description: s.description,
+          actionType: s.actionType,
+          actionPayload: s.actionPayload ? { ...s.actionPayload } : undefined,
+          severity: s.severity,
+        })),
+      },
+    })
+  } catch (err) {
+    socket.emit('advisor:error', {
+      chainId,
+      error: err instanceof Error ? err.message : 'Advisor analysis failed',
+    })
+  }
+}
+
+// ------------------------------------------------------------------
+// Maestro redirect response handler
+// ------------------------------------------------------------------
+
+function handleMaestroRedirectResponse(
+  data: { chainId: string; requestId: string; approved: boolean },
+): void {
+  const executor = socketActiveChains.get(data.chainId)
+  if (executor) {
+    executor.resolveRedirect(data.requestId, data.approved)
+  }
 }
 
 // ------------------------------------------------------------------
