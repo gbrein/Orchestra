@@ -96,8 +96,7 @@ export function buildChain(nodes: readonly Node[], edges: readonly Edge[]): Chai
   })
 }
 
-/** Returns true if there are at least 2 agent nodes on the canvas (edges are validated at run time) */
+/** Returns true if there is at least 1 agent node on the canvas */
 export function hasAgentChain(nodes: readonly Node[], _edges: readonly Edge[]): boolean {
-  const agentCount = nodes.filter((n) => n.type === 'agent').length
-  return agentCount >= 2
+  return nodes.some((n) => n.type === 'agent')
 }
