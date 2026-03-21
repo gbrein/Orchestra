@@ -202,10 +202,8 @@ export class ChainExecutor extends EventEmitter {
 
       spawner.on('text', (data: { content: string; partial: boolean }) => {
         if (data.partial) {
-          // Partial: accumulate streaming chunks for display
           fullOutput += data.content
         } else {
-          // Non-partial (result event): contains complete text — use it as definitive output
           fullOutput = data.content
         }
         this.emit('step_text', { stepIndex, agentId: step.agentId, content: data.content, partial: data.partial })

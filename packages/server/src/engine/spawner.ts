@@ -126,14 +126,21 @@ export class ClaudeCodeSpawner extends EventEmitter {
       this._process = null
     })
 
-    this._process.on('close', (code) => {
+    // Track when stdout is fully drained before emitting completion.
+    // On Windows, process 'close' can fire before all stdout data events
+    // are processed, causing output to be lost.
+    let stdoutClosed = false
+    let processExitCode: number | null = null
+
+    const tryComplete = () => {
+      if (!stdoutClosed || processExitCode === null) return
+
       // Flush any remaining buffered stdout
       if (stdoutBuffer.trim().length > 0) {
         this.handleLine(stdoutBuffer.replace(/\r$/, '').trim())
       }
-      const exitCode = code ?? 0
-      // Only treat as error if exit code is non-zero AND stderr contains
-      // something other than benign warnings (like the stdin warning)
+
+      const exitCode = processExitCode
       const stderrContent = this._stderrBuffer.trim()
       const isBenignStderr = !stderrContent || stderrContent.includes('no stdin data received')
       if (exitCode !== 0 && !isBenignStderr) {
@@ -142,6 +149,16 @@ export class ClaudeCodeSpawner extends EventEmitter {
         this.emit('completion', { exitCode })
       }
       this._process = null
+    }
+
+    this._process.stdout?.on('close', () => {
+      stdoutClosed = true
+      tryComplete()
+    })
+
+    this._process.on('close', (code) => {
+      processExitCode = code ?? 0
+      tryComplete()
     })
   }
 
