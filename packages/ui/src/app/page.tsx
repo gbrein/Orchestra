@@ -1617,7 +1617,8 @@ export default function Home() {
                 ])
                 return
               }
-              // Inject into agent chat cache and open
+              // Close workflow chat and open agent chat with step history
+              setWorkflowChatOpen(false)
               injectMessagesIntoCache(step.nodeId, msgs)
               setSelectedAgent({
                 id: step.nodeId,
@@ -1625,7 +1626,8 @@ export default function Home() {
                 status: 'idle' as AgentStatus,
                 model: step.model,
               })
-              setChatOpen(true)
+              // Small delay for Sheet transition
+              setTimeout(() => setChatOpen(true), 200)
             }}
           />
         </SheetContent>
