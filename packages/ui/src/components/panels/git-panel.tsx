@@ -153,11 +153,18 @@ export function GitPanel({ open, onOpenChange, workspaceId }: GitPanelProps) {
         </header>
 
         {/* Target directory */}
-        <div className="flex shrink-0 items-center gap-1.5 border-b border-border px-4 py-1.5 text-[10px] text-muted-foreground">
-          <FolderOpen className="h-3 w-3 shrink-0 text-amber-400" aria-hidden />
-          <span className="truncate font-mono">
-            {targetDir || 'Server directory (default)'}
-          </span>
+        <div className="shrink-0 border-b border-border px-4 py-1.5">
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+            <FolderOpen className="h-3 w-3 shrink-0 text-amber-400" aria-hidden />
+            <span className="truncate font-mono">
+              {targetDir || 'Server directory (default)'}
+            </span>
+          </div>
+          {!targetDir && (
+            <p className="mt-0.5 text-[9px] text-muted-foreground/60">
+              Configure a project folder in the Workflow Chat to target a specific repository.
+            </p>
+          )}
         </div>
 
         {/* Error banner */}

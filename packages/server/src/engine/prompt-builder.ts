@@ -56,7 +56,11 @@ export async function buildSpawnConfig(agentId: string, workspaceId?: string): P
   })
 
   if (!agent) {
-    throw new Error(`Agent '${agentId}' not found`)
+    throw new Error(
+      `Agent '${agentId}' not found in database. ` +
+      'The agent may have been created while the server was offline. ' +
+      'Try running the workflow again — it will auto-sync agents to the database.',
+    )
   }
 
   // ------------------------------------------------------------------

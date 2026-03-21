@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma'
 import { sendSuccess, sendError, NotFoundError } from '../lib/errors'
 
 const CreateAgentSchema = z.object({
+  id: z.string().uuid().optional(),
   name: z.string().min(1).max(100),
   persona: z.string().min(1),
   description: z.string().optional(),

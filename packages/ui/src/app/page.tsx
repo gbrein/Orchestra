@@ -655,6 +655,45 @@ export default function Home() {
       return
     }
 
+    // Ensure all agents in the chain exist in the database
+    for (const step of chain) {
+      try {
+        await apiGet(`/api/agents/${step.nodeId}`)
+      } catch {
+        // Agent not in DB — sync it now
+        const node = nodes.find((n) => n.id === step.nodeId)
+        const data = node?.data as AgentNodeData | undefined
+        try {
+          const saved = await apiPost<{ id: string }>('/api/agents', {
+            id: step.nodeId,
+            name: data?.name ?? step.agentName,
+            persona: `You are ${data?.name ?? step.agentName}. ${data?.description ?? ''}`.trim(),
+            purpose: data?.purpose,
+            model: data?.model,
+            scope: [],
+            allowedTools: [],
+          })
+          // If DB assigned a different ID, update the node
+          if (saved.id !== step.nodeId) {
+            setNodes((prev) => prev.map((n) =>
+              n.id === step.nodeId ? { ...n, id: saved.id } : n,
+            ))
+          }
+        } catch (syncErr) {
+          setWorkflowLog((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              type: 'error' as const,
+              content: `Agent "${step.agentName}" could not be saved to database. Please recreate it.`,
+              timestamp: new Date(),
+            },
+          ])
+          return
+        }
+      }
+    }
+
     const sock = getSocket()
     if (!sock.connected) {
       sock.connect()
