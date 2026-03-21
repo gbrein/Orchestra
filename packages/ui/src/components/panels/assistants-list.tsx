@@ -64,10 +64,13 @@ export function AssistantsList({
         ) : (
           <div className="flex flex-col gap-2 overflow-y-auto">
             {assistants.map((a) => (
-              <button
+              <div
                 key={a.id}
-                className="flex items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-accent"
+                role="button"
+                tabIndex={0}
+                className="flex items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-accent cursor-pointer"
                 onClick={() => onSelect(a)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(a) }}
               >
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium">
                   {a.name.charAt(0).toUpperCase()}
@@ -102,7 +105,7 @@ export function AssistantsList({
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 )}
-              </button>
+              </div>
             ))}
           </div>
         )}

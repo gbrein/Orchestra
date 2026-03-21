@@ -16,6 +16,7 @@ export interface SpawnOptions {
   readonly env?: Record<string, string>
   readonly mcpConfig?: MergedMcpConfig
   readonly addDirs?: string[]
+  readonly cwd?: string
 }
 
 export interface StreamEvent {
@@ -95,6 +96,7 @@ export class ClaudeCodeSpawner extends EventEmitter {
       stdio: ['pipe', 'pipe', 'pipe'],
       // On Unix create a new process group so we can kill the whole tree
       ...(process.platform !== 'win32' && { detached: true }),
+      ...(options.cwd ? { cwd: options.cwd } : {}),
     })
 
     this._process.stdout?.setEncoding('utf8')
@@ -124,14 +126,21 @@ export class ClaudeCodeSpawner extends EventEmitter {
       this._process = null
     })
 
-    this._process.on('close', (code) => {
+    // Track when stdout is fully drained before emitting completion.
+    // On Windows, process 'close' can fire before all stdout data events
+    // are processed, causing output to be lost.
+    let stdoutClosed = false
+    let processExitCode: number | null = null
+
+    const tryComplete = () => {
+      if (!stdoutClosed || processExitCode === null) return
+
       // Flush any remaining buffered stdout
       if (stdoutBuffer.trim().length > 0) {
         this.handleLine(stdoutBuffer.replace(/\r$/, '').trim())
       }
-      const exitCode = code ?? 0
-      // Only treat as error if exit code is non-zero AND stderr contains
-      // something other than benign warnings (like the stdin warning)
+
+      const exitCode = processExitCode
       const stderrContent = this._stderrBuffer.trim()
       const isBenignStderr = !stderrContent || stderrContent.includes('no stdin data received')
       if (exitCode !== 0 && !isBenignStderr) {
@@ -140,6 +149,16 @@ export class ClaudeCodeSpawner extends EventEmitter {
         this.emit('completion', { exitCode })
       }
       this._process = null
+    }
+
+    this._process.stdout?.on('close', () => {
+      stdoutClosed = true
+      tryComplete()
+    })
+
+    this._process.on('close', (code) => {
+      processExitCode = code ?? 0
+      tryComplete()
     })
   }
 
@@ -210,9 +229,13 @@ export class ClaudeCodeSpawner extends EventEmitter {
       args.push('--append-system-prompt', options.appendSystemPrompt)
     }
 
-    if (options.allowedTools && options.allowedTools.length > 0) {
-      args.push('--allowedTools', options.allowedTools.join(','))
-    }
+    // NOTE: --allowedTools causes exit code 1 when spawned via Node.js pipe
+    // (Claude CLI bug with piped stdin). Skipping this flag — permission-mode
+    // already controls tool access. Tools are still available per the model's
+    // default set.
+    // if (options.allowedTools && options.allowedTools.length > 0) {
+    //   args.push('--allowedTools', options.allowedTools.join(','))
+    // }
 
     if (options.maxBudgetUsd !== undefined) {
       args.push('--max-budget-usd', String(options.maxBudgetUsd))

@@ -1,10 +1,17 @@
 import { FastifyInstance } from 'fastify'
+import { access, stat } from 'fs/promises'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma'
-import { sendSuccess, sendError, NotFoundError } from '../lib/errors'
+import { sendSuccess, sendError, NotFoundError, ValidationError } from '../lib/errors'
 
 const CreateWorkspaceSchema = z.object({
   name: z.string().min(1).max(100),
+  workingDirectory: z.string().max(500).optional(),
+})
+
+const UpdateWorkspaceSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  workingDirectory: z.string().max(500).nullable().optional(),
 })
 
 const SaveCanvasSchema = z.object({
@@ -46,7 +53,7 @@ export async function canvasRoutes(app: FastifyInstance) {
   app.patch<{ Params: { id: string } }>('/api/workspaces/:id', async (req, reply) => {
     try {
       const { id } = req.params
-      const body = CreateWorkspaceSchema.parse(req.body)
+      const body = UpdateWorkspaceSchema.parse(req.body)
       const userId = req.user?.id
 
       const workspace = await prisma.workspace.findUnique({ where: { id } })
@@ -55,9 +62,26 @@ export async function canvasRoutes(app: FastifyInstance) {
         return sendError(reply, new NotFoundError('Workspace', id))
       }
 
+      // Validate working directory exists and is a directory
+      if (body.workingDirectory) {
+        try {
+          await access(body.workingDirectory)
+          const stats = await stat(body.workingDirectory)
+          if (!stats.isDirectory()) {
+            throw new ValidationError(`Path is not a directory: ${body.workingDirectory}`)
+          }
+        } catch (err) {
+          if (err instanceof ValidationError) throw err
+          throw new ValidationError(`Directory not found: ${body.workingDirectory}`)
+        }
+      }
+
       const updated = await prisma.workspace.update({
         where: { id },
-        data: { name: body.name },
+        data: {
+          ...(body.name !== undefined ? { name: body.name } : {}),
+          ...(body.workingDirectory !== undefined ? { workingDirectory: body.workingDirectory } : {}),
+        },
       })
       sendSuccess(reply, updated)
     } catch (error) {

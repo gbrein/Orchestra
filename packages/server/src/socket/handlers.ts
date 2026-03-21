@@ -12,6 +12,8 @@ import type { AgentRecord } from '../discussion/moderator'
 import type { ParticipantRole, DiscussionFormat } from '@orchestra/shared'
 import { LoopEngine } from '../engine/loop-engine'
 import { ChainExecutor } from '../engine/chain-executor'
+import { WorkflowAdvisor } from '../engine/advisor'
+import { SKILL_CATALOG } from '../skills/catalog'
 import { recordActivity } from '../services/activity'
 import type { ChainDefinition as ChainDefinitionPayload } from '@orchestra/shared'
 import type { ChainDefinition } from '../engine/chain-executor'
@@ -282,12 +284,20 @@ export function registerSocketHandlers(
       void handleAgentSetMode(socket, io, processManager, approvalManager, data)
     })
 
-    socket.on('chain:execute', (data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string }) => {
+    socket.on('chain:execute', (data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string; workspaceId?: string; maestro?: boolean }) => {
       void handleChainExecute(socket, io, data)
     })
 
     socket.on('chain:stop', (data: { chainId: string }) => {
       handleChainStop(socket, io, data)
+    })
+
+    socket.on('chain:maestro_redirect_response', (data: { chainId: string; requestId: string; approved: boolean }) => {
+      handleMaestroRedirectResponse(data)
+    })
+
+    socket.on('advisor:analyze', (data: { chainId: string; model?: string }) => {
+      void handleAdvisorAnalyze(socket, io, data)
     })
   })
 }
@@ -917,7 +927,7 @@ function handleLoopApprove(
 async function handleChainExecute(
   socket: Socket<ClientToServerEvents, ServerToClientEvents>,
   io: Server<ClientToServerEvents, ServerToClientEvents>,
-  data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string },
+  data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string; workspaceId?: string; maestro?: boolean },
 ): Promise<void> {
   const chainId = data.chainId ?? `chain-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
@@ -932,34 +942,105 @@ async function handleChainExecute(
   }
 
   try {
+    // Resolve workspace working directory if provided
+    let cwd: string | undefined
+    if (data.workspaceId) {
+      const workspace = await prisma.workspace.findUnique({
+        where: { id: data.workspaceId },
+        select: { workingDirectory: true },
+      })
+      cwd = workspace?.workingDirectory ?? undefined
+    }
+
     const executor = new ChainExecutor()
     socketActiveChains.set(chainId, executor)
+
+    // Persist chain run to DB
+    const stepCount = data.definition.steps.length
+    await prisma.chainRun.create({
+      data: {
+        chainId,
+        workspaceId: data.workspaceId ?? null,
+        initialMessage: data.initialMessage.slice(0, 5000),
+        totalSteps: stepCount,
+        status: 'running',
+      },
+    }).catch(() => {}) // Non-fatal if DB write fails
+
+    // Track per-step usage for DB persistence
+    const stepUsageMap = new Map<number, { tokensIn: number; tokensOut: number; costUsd: number }>()
 
     executor.on('step_start', (stepData) => {
       io.emit('chain:step_start', {
         chainId,
         stepIndex: stepData.stepIndex,
         agentId: stepData.agentId,
+        cwd: stepData.cwd,
       })
       io.emit('notification', {
         id: `chain-step-${chainId}-${stepData.stepIndex}`,
         level: 'info',
         title: `Chain step ${stepData.stepIndex} started (agent ${stepData.agentId})`,
       })
+      // Create step record in DB
+      prisma.chainStepResult.create({
+        data: {
+          chainRun: { connect: { chainId } },
+          stepIndex: stepData.stepIndex,
+          agentId: stepData.agentId,
+          status: 'running',
+        },
+      }).catch(() => {})
+    })
+
+    executor.on('step_text', (stepData) => {
+      io.emit('chain:step_text', { chainId, ...stepData })
+    })
+
+    executor.on('step_tool_use', (stepData) => {
+      io.emit('chain:step_tool_use', { chainId, ...stepData })
+    })
+
+    executor.on('step_tool_result', (stepData) => {
+      io.emit('chain:step_tool_result', { chainId, ...stepData })
+    })
+
+    executor.on('step_usage', (stepData) => {
+      io.emit('chain:step_usage', { chainId, ...stepData })
+      stepUsageMap.set(stepData.stepIndex, {
+        tokensIn: stepData.usage.inputTokens,
+        tokensOut: stepData.usage.outputTokens,
+        costUsd: stepData.usage.estimatedCostUsd ?? 0,
+      })
     })
 
     executor.on('step_complete', (stepData) => {
+      const output = typeof stepData.output === 'string' ? stepData.output : JSON.stringify(stepData.output ?? '')
       io.emit('chain:step_complete', {
         chainId,
         stepIndex: stepData.stepIndex,
         agentId: stepData.agentId,
-        output: typeof stepData.output === 'string' ? stepData.output : JSON.stringify(stepData.output ?? ''),
+        output,
       })
       io.emit('notification', {
         id: `chain-step-done-${chainId}-${stepData.stepIndex}`,
         level: 'info',
         title: `Chain step ${stepData.stepIndex} completed`,
       })
+      // Update step record in DB
+      const usage = stepUsageMap.get(stepData.stepIndex)
+      prisma.chainStepResult.updateMany({
+        where: {
+          chainRun: { chainId },
+          stepIndex: stepData.stepIndex,
+        },
+        data: {
+          output: output.slice(0, 50000),
+          status: 'completed',
+          completedAt: new Date(),
+          ...(usage ?? {}),
+        },
+      }).catch(() => {})
     })
 
     executor.on('chain_complete', (completeData) => {
@@ -973,6 +1054,11 @@ async function handleChainExecute(
         level: 'info',
         title: `Chain ${chainId} completed (${completeData.outputs.size} steps)`,
       })
+      // Update chain run in DB
+      prisma.chainRun.update({
+        where: { chainId },
+        data: { status: 'completed', completedAt: new Date() },
+      }).catch(() => {})
     })
 
     executor.on('error', (errData) => {
@@ -986,9 +1072,60 @@ async function handleChainExecute(
         level: 'error',
         title: `Chain step ${errData.stepIndex} failed: ${errData.error.slice(0, 80)}`,
       })
+      // Mark step as failed in DB
+      prisma.chainStepResult.updateMany({
+        where: {
+          chainRun: { chainId },
+          stepIndex: errData.stepIndex,
+        },
+        data: { status: 'failed', completedAt: new Date() },
+      }).catch(() => {})
     })
 
-    executor.execute(data.definition as ChainDefinition, data.initialMessage).catch((err: unknown) => {
+    // Maestro event forwarding
+    executor.on('step_maestro_thinking', (stepData) => {
+      // Emit a lightweight "thinking" event so the UI can show a spinner
+      io.emit('chain:maestro_decision', {
+        chainId,
+        reasoning: 'Evaluating step output...',
+        action: 'continue',
+        targetAgentName: '',
+        message: '',
+      })
+    })
+
+    executor.on('step_maestro', (stepData) => {
+      const { decision } = stepData
+      io.emit('chain:maestro_decision', {
+        chainId,
+        reasoning: decision.reasoning,
+        action: decision.action,
+        targetAgentName: '',
+        message: decision.message,
+      })
+    })
+
+    executor.on('step_maestro_redirect_request', (stepData) => {
+      const { decision, requestId } = stepData
+      // Look up agent names for display
+      const steps = data.definition.steps
+      const fromAgent = steps[stepData.stepIndex]?.agentId ?? 'unknown'
+      const toAgent = steps[decision.targetStepIndex]?.agentId ?? 'unknown'
+
+      io.emit('chain:maestro_redirect_request', {
+        chainId,
+        reasoning: decision.reasoning,
+        fromAgent,
+        toAgent,
+        requestId,
+      })
+    })
+
+    executor.execute(data.definition as ChainDefinition, data.initialMessage, {
+      cwd,
+      workspaceId: data.workspaceId,
+      maestro: data.maestro,
+    }).catch((err: unknown) => {
       socketActiveChains.delete(chainId)
       io.emit('agent:error', {
         agentId: chainId,
@@ -996,6 +1133,11 @@ async function handleChainExecute(
         error: err instanceof Error ? err.message : 'Chain execution failed',
         type: 'PROCESS_ERROR',
       })
+      // Mark chain as failed in DB
+      prisma.chainRun.update({
+        where: { chainId },
+        data: { status: 'failed', completedAt: new Date() },
+      }).catch(() => {})
     })
   } catch (err) {
     socketActiveChains.delete(chainId)
@@ -1033,6 +1175,103 @@ function handleChainStop(
     level: 'info',
     title: `Chain ${chainId} stopped`,
   })
+}
+
+// ------------------------------------------------------------------
+// Advisor handler
+// ------------------------------------------------------------------
+
+async function handleAdvisorAnalyze(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents>,
+  io: Server<ClientToServerEvents, ServerToClientEvents>,
+  data: { chainId: string; model?: string },
+): Promise<void> {
+  const { chainId } = data
+  const model = data.model ?? 'claude-haiku-4-5-20251001'
+
+  try {
+    const chainRun = await prisma.chainRun.findUnique({
+      where: { chainId },
+      include: { steps: { orderBy: { stepIndex: 'asc' } } },
+    })
+
+    if (!chainRun || chainRun.status !== 'completed') {
+      socket.emit('advisor:error', { chainId, error: 'No completed workflow run found for this chain.' })
+      return
+    }
+
+    // Load agent metadata
+    const agentIds = [...new Set(chainRun.steps.map((s) => s.agentId))]
+    const agents = await prisma.agent.findMany({
+      where: { id: { in: agentIds } },
+      select: { id: true, name: true, persona: true },
+    })
+    const agentMap = new Map(agents.map((a) => [a.id, a]))
+
+    io.emit('advisor:analyzing', { chainId })
+
+    const advisor = new WorkflowAdvisor()
+    const result = await advisor.analyze(
+      {
+        initialMessage: chainRun.initialMessage,
+        agents: agents.map((a) => ({
+          name: a.name,
+          persona: a.persona ?? '',
+          agentId: a.id,
+        })),
+        stepResults: chainRun.steps.map((s) => ({
+          stepIndex: s.stepIndex,
+          agentName: agentMap.get(s.agentId)?.name ?? s.agentName ?? s.agentId,
+          agentId: s.agentId,
+          output: s.output,
+          tokensIn: s.tokensIn,
+          tokensOut: s.tokensOut,
+          status: s.status,
+        })),
+        availableSkills: SKILL_CATALOG.map((s) => ({
+          name: s.name,
+          description: s.description,
+          category: s.category,
+        })),
+      },
+      model,
+    )
+
+    io.emit('advisor:result', {
+      chainId,
+      result: {
+        overallAssessment: result.overallAssessment,
+        objectiveMet: result.objectiveMet,
+        suggestions: result.suggestions.map((s) => ({
+          id: s.id,
+          category: s.category,
+          title: s.title,
+          description: s.description,
+          actionType: s.actionType,
+          actionPayload: s.actionPayload ? { ...s.actionPayload } : undefined,
+          severity: s.severity,
+        })),
+      },
+    })
+  } catch (err) {
+    socket.emit('advisor:error', {
+      chainId,
+      error: err instanceof Error ? err.message : 'Advisor analysis failed',
+    })
+  }
+}
+
+// ------------------------------------------------------------------
+// Maestro redirect response handler
+// ------------------------------------------------------------------
+
+function handleMaestroRedirectResponse(
+  data: { chainId: string; requestId: string; approved: boolean },
+): void {
+  const executor = socketActiveChains.get(data.chainId)
+  if (executor) {
+    executor.resolveRedirect(data.requestId, data.approved)
+  }
 }
 
 // ------------------------------------------------------------------

@@ -6,6 +6,7 @@ export interface WorkspaceContext {
   readonly addDirs: string[]
   readonly appendPromptSections: string[]
   readonly env: Record<string, string>
+  readonly cwd?: string
 }
 
 /**
@@ -19,7 +20,7 @@ export interface WorkspaceContext {
  */
 export async function buildWorkspaceContext(workspaceId: string): Promise<WorkspaceContext> {
   const [workspace, resources] = await Promise.all([
-    prisma.workspace.findUnique({ where: { id: workspaceId }, select: { contextDocument: true } }),
+    prisma.workspace.findUnique({ where: { id: workspaceId }, select: { contextDocument: true, workingDirectory: true } }),
     prisma.workspaceResource.findMany({
       where: { workspaceId },
       orderBy: { createdAt: 'asc' },
@@ -43,7 +44,9 @@ export async function buildWorkspaceContext(workspaceId: string): Promise<Worksp
   const variableResources = resources.filter((r) => r.type === 'variable')
 
   // Files — add the workspace files directory once if any file resources exist
-  if (fileResources.length > 0) {
+  // When workingDirectory is set, resources are inside the project — no need for addDirs
+  // since the agent already runs in that directory. Only add if using legacy storage.
+  if (fileResources.length > 0 && !workspace?.workingDirectory) {
     addDirs.push(getWorkspaceFilesDir(workspaceId))
 
     const manifestEntries = fileResources.map((r) => {
@@ -100,7 +103,12 @@ export async function buildWorkspaceContext(workspaceId: string): Promise<Worksp
     env[resource.varKey] = value
   }
 
-  return { addDirs, appendPromptSections, env }
+  return {
+    addDirs,
+    appendPromptSections,
+    env,
+    ...(workspace?.workingDirectory ? { cwd: workspace.workingDirectory } : {}),
+  }
 }
 
 // ------------------------------------------------------------------

@@ -278,11 +278,12 @@ enum ResourceType {
 }
 
 model Workspace {
-  id              String   @id @default(uuid())
-  name            String
-  contextDocument String?
-  planDocument    String?
-  userId          String?
+  id               String   @id @default(uuid())
+  name             String
+  contextDocument  String?
+  planDocument     String?
+  workingDirectory String?
+  userId           String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -419,4 +420,34 @@ model Story {
   prd PRD @relation(fields: [prdId], references: [id], onDelete: Cascade)
 
   @@index([prdId, priority])
+}
+
+model ChainRun {
+  id             String    @id @default(uuid())
+  chainId        String    @unique
+  workspaceId    String?
+  initialMessage String
+  status         String    @default("running")
+  totalSteps     Int       @default(0)
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+  steps          ChainStepResult[]
+}
+
+model ChainStepResult {
+  id          String    @id @default(uuid())
+  chainRunId  String
+  stepIndex   Int
+  agentId     String
+  agentName   String?
+  output      String    @default("")
+  tokensIn    Int       @default(0)
+  tokensOut   Int       @default(0)
+  costUsd     Float     @default(0)
+  status      String    @default("running")
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  chainRun    ChainRun  @relation(fields: [chainRunId], references: [id], onDelete: Cascade)
+
+  @@index([chainRunId])
 }

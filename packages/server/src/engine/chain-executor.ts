@@ -7,6 +7,9 @@ import { randomUUID } from 'crypto'
 import { buildSpawnConfig } from './prompt-builder'
 import { ClaudeCodeSpawner } from './spawner'
 import type { SpawnOptions } from './spawner'
+import type { TokenUsage } from '@orchestra/shared'
+import { Maestro } from './maestro'
+import type { MaestroDecision, MaestroAgent, MaestroExecutionEntry } from './maestro'
 
 export interface ChainStep {
   readonly agentId: string
@@ -25,9 +28,22 @@ export interface ChainDefinition {
   readonly edges: readonly ChainEdge[]
 }
 
+export interface ChainExecuteOptions {
+  readonly cwd?: string
+  readonly workspaceId?: string
+  readonly maestro?: boolean
+}
+
 export interface ChainExecutorEvents {
-  step_start: (data: { stepIndex: number; agentId: string }) => void
+  step_start: (data: { stepIndex: number; agentId: string; cwd?: string }) => void
+  step_text: (data: { stepIndex: number; agentId: string; content: string; partial: boolean }) => void
+  step_tool_use: (data: { stepIndex: number; agentId: string; toolName: string; input: unknown; id: string }) => void
+  step_tool_result: (data: { stepIndex: number; agentId: string; toolName: string; output: unknown; toolUseId: string }) => void
+  step_usage: (data: { stepIndex: number; agentId: string; usage: TokenUsage }) => void
   step_complete: (data: { stepIndex: number; agentId: string; output: string }) => void
+  step_maestro: (data: { decision: MaestroDecision; stepIndex: number }) => void
+  step_maestro_thinking: (data: { stepIndex: number }) => void
+  step_maestro_redirect_request: (data: { decision: MaestroDecision; stepIndex: number; requestId: string }) => void
   chain_complete: (data: { outputs: Map<number, string> }) => void
   error: (data: { stepIndex: number; error: string }) => void
 }
@@ -40,12 +56,33 @@ export declare interface ChainExecutor {
 export class ChainExecutor extends EventEmitter {
   private stopped = false
   private activeSpawners: ClaudeCodeSpawner[] = []
+  private executionCwd?: string
+  private executionWorkspaceId?: string
+  private pendingRedirectResolvers = new Map<string, (approved: boolean) => void>()
+  // Agent metadata loaded once for Maestro context
+  private agentMetadata = new Map<string, MaestroAgent>()
 
-  async execute(chain: ChainDefinition, initialMessage: string): Promise<void> {
+  /** Resolve a pending Maestro redirect request (called from socket handler) */
+  resolveRedirect(requestId: string, approved: boolean): void {
+    const resolver = this.pendingRedirectResolvers.get(requestId)
+    if (resolver) {
+      this.pendingRedirectResolvers.delete(requestId)
+      resolver(approved)
+    }
+  }
+
+  async execute(chain: ChainDefinition, initialMessage: string, options?: ChainExecuteOptions): Promise<void> {
     this.stopped = false
     this.activeSpawners = []
+    this.executionCwd = options?.cwd
+    this.executionWorkspaceId = options?.workspaceId
 
     validateNoCycles(chain)
+
+    // Route to Maestro-driven execution if enabled
+    if (options?.maestro) {
+      return this.executeMaestro(chain, initialMessage, options)
+    }
 
     const outputs = new Map<number, string>()
     const stepCount = chain.steps.length
@@ -154,30 +191,171 @@ export class ChainExecutor extends EventEmitter {
     }
   }
 
-  stop(): void {
-    this.stopped = true
-    for (const spawner of this.activeSpawners) {
-      spawner.kill()
+  // ------------------------------------------------------------------
+  // Maestro-driven execution
+  // ------------------------------------------------------------------
+
+  private async executeMaestro(
+    chain: ChainDefinition,
+    initialMessage: string,
+    options: ChainExecuteOptions,
+  ): Promise<void> {
+    const outputs = new Map<number, string>()
+    const maestro = new Maestro()
+    const agentIds = chain.steps.map((s) => s.agentId)
+
+    // Load agent metadata for Maestro context
+    await this.loadAgentMetadata(chain)
+
+    const memories = await maestro.loadMemories(agentIds)
+
+    const executionHistory: MaestroExecutionEntry[] = []
+    const agents: MaestroAgent[] = chain.steps.map((step) => {
+      const meta = this.agentMetadata.get(step.agentId)
+      return meta ?? { name: step.agentId, persona: '' }
+    })
+
+    const MAX_RETRIES_PER_STEP = 2
+    const retryCount = new Map<number, number>()
+
+    let currentStepIndex = 0
+    let currentMessage = initialMessage
+
+    while (currentStepIndex < chain.steps.length && !this.stopped) {
+      const step = chain.steps[currentStepIndex]!
+      const retries = retryCount.get(currentStepIndex) ?? 0
+      const isRetry = retries > 0
+
+      // Run the step
+      let output: string
+      try {
+        output = await this.runSingleStep(step, currentStepIndex, currentMessage)
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err)
+        this.emit('error', { stepIndex: currentStepIndex, error: errorMsg })
+        break
+      }
+
+      outputs.set(currentStepIndex, output)
+      executionHistory.push({
+        stepIndex: currentStepIndex,
+        agentName: agents[currentStepIndex]?.name ?? step.agentId,
+        output,
+        wasRetry: isRetry,
+      })
+
+      // Maestro evaluates
+      this.emit('step_maestro_thinking', { stepIndex: currentStepIndex })
+
+      let decision: MaestroDecision
+      try {
+        decision = await maestro.evaluate({
+          initialMessage,
+          agents,
+          executionHistory,
+          currentStepOutput: output,
+          completedStepIndex: currentStepIndex,
+          totalSteps: chain.steps.length,
+          memories,
+        })
+      } catch {
+        // Maestro failed — fall through to linear execution
+        decision = {
+          action: currentStepIndex + 1 >= chain.steps.length ? 'conclude' : 'continue',
+          targetStepIndex: currentStepIndex + 1,
+          message: output,
+          reasoning: 'Maestro evaluation failed. Continuing with default behavior.',
+          learning: null,
+        }
+      }
+
+      this.emit('step_maestro', { decision, stepIndex: currentStepIndex })
+
+      // Save learning if present — attach to the first agent in the chain
+      if (decision.learning && agentIds[0]) {
+        void maestro.saveMemory(agentIds[0], decision.learning)
+      }
+
+      if (decision.action === 'redirect') {
+        if (retries >= MAX_RETRIES_PER_STEP) {
+          // Force continue — max retries exceeded
+          this.emit('step_maestro', {
+            decision: { ...decision, action: 'continue' as const, reasoning: `Max retries (${MAX_RETRIES_PER_STEP}) exceeded for this step. Continuing.` },
+            stepIndex: currentStepIndex,
+          })
+        } else if (retries === 0) {
+          // First redirect — auto-approve, no user prompt needed
+          retryCount.set(currentStepIndex, retries + 1)
+          currentStepIndex = decision.targetStepIndex
+          currentMessage = ensureMessageHasContent(decision.message, output)
+          continue
+        } else {
+          // Retry (2nd+ redirect on same step) — ask user
+          const requestId = randomUUID()
+          this.emit('step_maestro_redirect_request', {
+            decision,
+            stepIndex: currentStepIndex,
+            requestId,
+          })
+
+          const approved = await this.waitForRedirectApproval(requestId)
+
+          if (approved) {
+            retryCount.set(currentStepIndex, retries + 1)
+            currentStepIndex = decision.targetStepIndex
+            currentMessage = ensureMessageHasContent(decision.message, output)
+            continue
+          }
+        }
+        // Declined or max retries — fall through to continue
+      }
+
+      if (decision.action === 'conclude') {
+        break
+      }
+
+      // Continue to next step — ensure message includes output
+      currentMessage = ensureMessageHasContent(decision.message, output)
+      currentStepIndex++
     }
-    this.activeSpawners = []
+
+    if (!this.stopped) {
+      this.emit('chain_complete', { outputs })
+    }
   }
 
-  // ------------------------------------------------------------------
-  // Private helpers
-  // ------------------------------------------------------------------
+  private async loadAgentMetadata(chain: ChainDefinition): Promise<void> {
+    const { prisma: db } = await import('../lib/prisma')
+    const agentIds = chain.steps.map((s) => s.agentId)
 
-  private async runStep(
+    try {
+      const agents = await db.agent.findMany({
+        where: { id: { in: agentIds } },
+        select: { id: true, name: true, persona: true },
+      })
+
+      for (const agent of agents) {
+        this.agentMetadata.set(agent.id, {
+          name: agent.name,
+          persona: agent.persona ?? '',
+        })
+      }
+    } catch {
+      // Best-effort — names will fall back to IDs
+    }
+  }
+
+  /** Run a single step without DAG logic (used by Maestro loop) */
+  private async runSingleStep(
     step: ChainStep,
     stepIndex: number,
-    predecessors: Map<number, number[]>,
-    outputs: Map<number, string>,
-    initialMessage: string,
+    message: string,
   ): Promise<string> {
-    this.emit('step_start', { stepIndex, agentId: step.agentId })
-
-    const message = this.buildStepMessage(stepIndex, predecessors, outputs, initialMessage)
-    const config = await buildSpawnConfig(step.agentId)
+    const config = await buildSpawnConfig(step.agentId, this.executionWorkspaceId)
     const sessionId = randomUUID()
+    const cwd = this.executionCwd ?? config.cwd
+
+    this.emit('step_start', { stepIndex, agentId: step.agentId, cwd })
 
     const spawner = new ClaudeCodeSpawner()
     this.activeSpawners.push(spawner)
@@ -186,9 +364,24 @@ export class ChainExecutor extends EventEmitter {
       let fullOutput = ''
 
       spawner.on('text', (data: { content: string; partial: boolean }) => {
-        if (!data.partial) {
+        if (data.partial) {
           fullOutput += data.content
+        } else {
+          fullOutput = data.content
         }
+        this.emit('step_text', { stepIndex, agentId: step.agentId, content: data.content, partial: data.partial })
+      })
+
+      spawner.on('tool_use', (data: { toolName: string; input: unknown; id: string }) => {
+        this.emit('step_tool_use', { stepIndex, agentId: step.agentId, toolName: data.toolName, input: data.input, id: data.id })
+      })
+
+      spawner.on('tool_result', (data: { toolName: string; output: unknown; toolUseId: string }) => {
+        this.emit('step_tool_result', { stepIndex, agentId: step.agentId, toolName: data.toolName, output: data.output, toolUseId: data.toolUseId })
+      })
+
+      spawner.on('usage', (data: TokenUsage) => {
+        this.emit('step_usage', { stepIndex, agentId: step.agentId, usage: data })
       })
 
       spawner.on('completion', () => {
@@ -214,6 +407,107 @@ export class ChainExecutor extends EventEmitter {
           permissionMode: config.permissionMode,
           maxBudgetUsd: config.maxBudgetUsd,
           env: config.env,
+          cwd,
+          ...step.config,
+        })
+      } catch (err) {
+        this.activeSpawners = this.activeSpawners.filter((s) => s !== spawner)
+        reject(err instanceof Error ? err : new Error(String(err)))
+      }
+    })
+  }
+
+  private waitForRedirectApproval(requestId: string): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      this.pendingRedirectResolvers.set(requestId, resolve)
+
+      // Auto-decline after 2 minutes if no response
+      setTimeout(() => {
+        if (this.pendingRedirectResolvers.has(requestId)) {
+          this.pendingRedirectResolvers.delete(requestId)
+          resolve(false)
+        }
+      }, 120_000)
+    })
+  }
+
+  stop(): void {
+    this.stopped = true
+    for (const spawner of this.activeSpawners) {
+      spawner.kill()
+    }
+    this.activeSpawners = []
+  }
+
+  // ------------------------------------------------------------------
+  // Private helpers
+  // ------------------------------------------------------------------
+
+  private async runStep(
+    step: ChainStep,
+    stepIndex: number,
+    predecessors: Map<number, number[]>,
+    outputs: Map<number, string>,
+    initialMessage: string,
+  ): Promise<string> {
+    const message = this.buildStepMessage(stepIndex, predecessors, outputs, initialMessage)
+    const config = await buildSpawnConfig(step.agentId, this.executionWorkspaceId)
+    const sessionId = randomUUID()
+    const cwd = this.executionCwd ?? config.cwd
+
+    this.emit('step_start', { stepIndex, agentId: step.agentId, cwd })
+
+    const spawner = new ClaudeCodeSpawner()
+    this.activeSpawners.push(spawner)
+
+    return new Promise<string>((resolve, reject) => {
+      let fullOutput = ''
+
+      spawner.on('text', (data: { content: string; partial: boolean }) => {
+        if (data.partial) {
+          fullOutput += data.content
+        } else {
+          fullOutput = data.content
+        }
+        this.emit('step_text', { stepIndex, agentId: step.agentId, content: data.content, partial: data.partial })
+      })
+
+      spawner.on('tool_use', (data: { toolName: string; input: unknown; id: string }) => {
+        this.emit('step_tool_use', { stepIndex, agentId: step.agentId, toolName: data.toolName, input: data.input, id: data.id })
+      })
+
+      spawner.on('tool_result', (data: { toolName: string; output: unknown; toolUseId: string }) => {
+        this.emit('step_tool_result', { stepIndex, agentId: step.agentId, toolName: data.toolName, output: data.output, toolUseId: data.toolUseId })
+      })
+
+      spawner.on('usage', (data: TokenUsage) => {
+        this.emit('step_usage', { stepIndex, agentId: step.agentId, usage: data })
+      })
+
+      spawner.on('completion', () => {
+        this.activeSpawners = this.activeSpawners.filter((s) => s !== spawner)
+        this.emit('step_complete', { stepIndex, agentId: step.agentId, output: fullOutput })
+        resolve(fullOutput)
+      })
+
+      spawner.on('error', (err: Error) => {
+        this.activeSpawners = this.activeSpawners.filter((s) => s !== spawner)
+        reject(new Error(`Step ${stepIndex} (agent ${step.agentId}) failed: ${err.message}`))
+      })
+
+      try {
+        spawner.spawn({
+          agentId: step.agentId,
+          sessionId,
+          message,
+          systemPrompt: config.systemPrompt,
+          appendSystemPrompt: config.appendSystemPrompt,
+          allowedTools: config.allowedTools,
+          model: config.model,
+          permissionMode: config.permissionMode,
+          maxBudgetUsd: config.maxBudgetUsd,
+          env: config.env,
+          cwd,
           ...step.config,
         })
       } catch (err) {
@@ -340,4 +634,15 @@ function cascadeSkip(
     skipped.add(idx)
     queue.push(...(successors.get(idx) ?? []))
   }
+}
+
+/**
+ * Ensures the Maestro's message includes the actual step output.
+ * If the message is too short or empty, falls back to the raw output.
+ */
+function ensureMessageHasContent(message: string, stepOutput: string): string {
+  if (!message || message.length < 50) {
+    return stepOutput
+  }
+  return message
 }

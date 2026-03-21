@@ -12,9 +12,8 @@ export interface UseSocketReturn {
 
 /**
  * Socket connection hook.
- * Does NOT auto-connect — call `connect()` explicitly when the user
- * triggers an action that requires the backend (e.g. starting an agent).
- * This avoids CORS error spam when only the UI is running.
+ * Auto-connects on mount. Tracks connection state and errors.
+ * Reconnects automatically if disconnected.
  */
 export function useSocket(): UseSocketReturn {
   const [connected, setConnected] = useState(false)
@@ -42,11 +41,12 @@ export function useSocket(): UseSocketReturn {
       setConnecting(false)
     })
 
-    socket.on('connect_error', () => {
+    socket.on('connect_error', (err) => {
       if (!mountedRef.current) return
       setConnected(false)
       setConnecting(false)
-      setError('Cannot reach server')
+      const msg = err?.message ?? 'Cannot reach server'
+      setError(msg.includes('xhr poll error') ? 'Server not running on port 3001' : msg)
     })
   }, [])
 
@@ -62,12 +62,14 @@ export function useSocket(): UseSocketReturn {
     socket.connect()
   }, [attachListeners])
 
+  // Auto-connect on mount
   useEffect(() => {
     mountedRef.current = true
+    connect()
     return () => {
       mountedRef.current = false
     }
-  }, [])
+  }, [connect])
 
   return { connected, connecting, error, connect }
 }

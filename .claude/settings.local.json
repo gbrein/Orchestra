@@ -1,6 +1,6 @@
 {
   "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "4"
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "10"
   },
   "permissions": {
     "allow": [
@@ -56,7 +56,33 @@
       "Bash(curl -s http://localhost:3001/api/health)",
       "Bash(where claude:*)",
       "Bash(where claude.cmd)",
-      "Bash(node -e \":*)"
+      "Bash(node -e \":*)",
+      "Bash(curl -s http://localhost:3001/api/workspaces)",
+      "Bash(ls:*)",
+      "Bash(curl -sv -X OPTIONS \"http://localhost:3001/api/workspaces/64ab6cbf-0d23-418b-b96d-fa6c6b3057c4/canvas\" -H 'Origin: http://localhost:3000' -H 'Access-Control-Request-Method: PUT' -H 'Access-Control-Request-Headers: content-type')",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(npx --workspace=@orchestra/server prisma migrate dev --name add-agent-permission-mode --create-only)",
+      "Bash(npx --workspace=@orchestra/server prisma migrate dev)",
+      "Bash(npx turbo:*)",
+      "Bash(npx --workspace=@orchestra/ui next build)",
+      "Bash(find /c/Users/gbrei/orchestrator/node_modules -type d -name *prisma-adapter*)",
+      "Bash(find /c/Users/gbrei/orchestrator/packages/server/node_modules/better-auth -name *fastify* -o -name *express* -o -name *node*)",
+      "Bash(find /c/Users/gbrei/orchestrator/packages/server/node_modules/better-auth -name *.prisma)",
+      "Bash(npx --workspace=@orchestra/server prisma migrate dev --name add-auth-models)",
+      "Bash(npx --workspace=@orchestra/server prisma migrate dev --name add-activity-cost-artifacts-favorites-context)",
+      "Bash(node:*)",
+      "Bash(chmod +x scripts/setup-env.sh)",
+      "Bash(bash scripts/setup-env.sh)",
+      "Bash(curl:*)",
+      "Bash(object should not be disturbed or locked\". Fixed by registering auth:*)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill //PID 17716 //F)",
+      "Bash(kill %1)",
+      "Bash(gh pr:*)",
+      "Bash(find /c/Users/gbrei/orchestrator/packages -name *plan* -o -name *workflow*)",
+      "Bash(find /c/Users/gbrei/orchestrator/packages/ui/src -name *chain* -o -name *discussion*)",
+      "Bash(find /c/Users/gbrei/orchestrator/packages/ui/src/components -name *.tsx -type f)",
+      "Bash(npx playwright:*)"
     ]
   }
 }

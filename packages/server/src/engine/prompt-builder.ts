@@ -38,6 +38,7 @@ export interface BuildResult {
   readonly env: Record<string, string>
   readonly mcpConfig?: MergedMcpConfig
   readonly addDirs?: string[]
+  readonly cwd?: string
 }
 
 export async function buildSpawnConfig(agentId: string, workspaceId?: string): Promise<BuildResult> {
@@ -55,7 +56,11 @@ export async function buildSpawnConfig(agentId: string, workspaceId?: string): P
   })
 
   if (!agent) {
-    throw new Error(`Agent '${agentId}' not found`)
+    throw new Error(
+      `Agent '${agentId}' not found in database. ` +
+      'The agent may have been created while the server was offline. ' +
+      'Try running the workflow again — it will auto-sync agents to the database.',
+    )
   }
 
   // ------------------------------------------------------------------
@@ -178,6 +183,7 @@ export async function buildSpawnConfig(agentId: string, workspaceId?: string): P
   // ------------------------------------------------------------------
   let addDirs: string[] | undefined
   let mergedAppendPrompt: string | undefined = appendSystemPrompt
+  let cwd: string | undefined
 
   if (workspaceId) {
     try {
@@ -200,6 +206,10 @@ export async function buildSpawnConfig(agentId: string, workspaceId?: string): P
           env[k] = v
         }
       }
+
+      if (wsContext.cwd) {
+        cwd = wsContext.cwd
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.error(
@@ -219,6 +229,7 @@ export async function buildSpawnConfig(agentId: string, workspaceId?: string): P
     env,
     ...(hasMcpServers ? { mcpConfig } : {}),
     ...(addDirs && addDirs.length > 0 ? { addDirs } : {}),
+    ...(cwd ? { cwd } : {}),
   }
 }
 

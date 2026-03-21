@@ -1,9 +1,10 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { Check, ChevronDown, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, FolderOpen, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { FolderPicker } from '@/components/shared/folder-picker'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,7 +35,7 @@ export interface WorkspaceSwitcherProps {
   readonly workspaces: readonly Workspace[]
   readonly activeId: string
   readonly onSelect: (id: string) => void
-  readonly onCreateWorkspace: (name: string) => void
+  readonly onCreateWorkspace: (name: string, workingDirectory?: string) => void
   readonly onRenameWorkspace?: (id: string, name: string) => void
   readonly onDeleteWorkspace?: (id: string) => void
 }
@@ -52,6 +53,8 @@ export function WorkspaceSwitcher({
   const [open, setOpen] = useState(false)
   const [creatingNew, setCreatingNew] = useState(false)
   const [newName, setNewName] = useState('')
+  const [newFolder, setNewFolder] = useState('')
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<Workspace | null>(null)
@@ -87,14 +90,16 @@ export function WorkspaceSwitcher({
   function handleCancelCreate() {
     setCreatingNew(false)
     setNewName('')
+    setNewFolder('')
   }
 
   function handleConfirmCreate() {
     const trimmed = newName.trim()
-    if (!trimmed) return
-    onCreateWorkspace(trimmed)
+    if (!trimmed || !newFolder.trim()) return
+    onCreateWorkspace(trimmed, newFolder.trim())
     setCreatingNew(false)
     setNewName('')
+    setNewFolder('')
     setOpen(false)
   }
 
@@ -265,7 +270,7 @@ export function WorkspaceSwitcher({
 
           {creatingNew ? (
             <div
-              className="flex items-center gap-1.5 px-2 py-1.5"
+              className="flex flex-col gap-1.5 px-2 py-1.5"
               onPointerDown={(e) => e.stopPropagation()}
             >
               <Input
@@ -274,28 +279,52 @@ export function WorkspaceSwitcher({
                 onChange={(e) => setNewName(e.target.value)}
                 onKeyDown={handleInputKeyDown}
                 placeholder="Workspace name…"
-                className="h-7 flex-1 text-xs"
+                className="h-7 text-xs"
                 aria-label="New workspace name"
               />
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 w-7 shrink-0 p-0"
-                onClick={handleConfirmCreate}
-                disabled={!newName.trim()}
-                aria-label="Confirm new workspace"
-              >
-                <Check className="h-3.5 w-3.5 text-green-500" aria-hidden />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 w-7 shrink-0 p-0"
-                onClick={handleCancelCreate}
-                aria-label="Cancel new workspace"
-              >
-                <X className="h-3.5 w-3.5" aria-hidden />
-              </Button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  className="flex h-7 flex-1 items-center gap-1.5 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => setFolderPickerOpen(true)}
+                >
+                  <FolderOpen className="h-3 w-3 shrink-0 text-amber-400" aria-hidden />
+                  <span className="truncate font-mono">
+                    {newFolder || 'Select project folder…'}
+                  </span>
+                </button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 shrink-0 p-0"
+                  onClick={handleConfirmCreate}
+                  disabled={!newName.trim() || !newFolder.trim()}
+                  aria-label="Confirm new workspace"
+                >
+                  <Check className="h-3.5 w-3.5 text-green-500" aria-hidden />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 shrink-0 p-0"
+                  onClick={handleCancelCreate}
+                  aria-label="Cancel new workspace"
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden />
+                </Button>
+              </div>
+              <FolderPicker
+                open={folderPickerOpen}
+                onOpenChange={setFolderPickerOpen}
+                onSelect={(path) => {
+                  setNewFolder(path)
+                  if (!newName.trim()) {
+                    // Auto-fill name from folder name
+                    const parts = path.replace(/\\/g, '/').split('/')
+                    setNewName(parts[parts.length - 1] || '')
+                  }
+                }}
+              />
             </div>
           ) : (
             <DropdownMenuItem

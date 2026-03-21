@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { apiGet } from '@/lib/api'
 import {
+  FolderOpen,
   GitBranch,
   RefreshCw,
   X,
@@ -25,6 +27,7 @@ import { GitBranchesTab } from '@/components/panels/git-branches-tab'
 export interface GitPanelProps {
   readonly open: boolean
   readonly onOpenChange: (open: boolean) => void
+  readonly workspaceId?: string | null
 }
 
 type GitTabId = 'status' | 'log' | 'branches'
@@ -37,18 +40,33 @@ const TABS: { id: GitTabId; label: string }[] = [
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export function GitPanel({ open, onOpenChange }: GitPanelProps) {
+export function GitPanel({ open, onOpenChange, workspaceId }: GitPanelProps) {
   const [activeTab, setActiveTab] = useState<GitTabId>('status')
   const [commitMsg, setCommitMsg] = useState('')
   const [committing, setCommitting] = useState(false)
   const [pushing, setPushing] = useState(false)
+
+  const [targetDir, setTargetDir] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open || !workspaceId) {
+      setTargetDir(null)
+      return
+    }
+    apiGet<Array<{ id: string; workingDirectory?: string | null }>>('/api/workspaces')
+      .then((ws) => {
+        const match = ws.find((w) => w.id === workspaceId)
+        setTargetDir(match?.workingDirectory ?? null)
+      })
+      .catch(() => {})
+  }, [open, workspaceId])
 
   const {
     status, log, branches,
     loading, error,
     refreshStatus, refreshLog, refreshBranches,
     stageFiles, unstageFiles, commit, push,
-  } = useGit(open)
+  } = useGit(open, workspaceId)
 
   const stagedCount = status?.files.filter((f) => f.staged).length ?? 0
   const canCommit = commitMsg.trim().length > 0 && stagedCount > 0 && !committing
@@ -133,6 +151,21 @@ export function GitPanel({ open, onOpenChange }: GitPanelProps) {
             </Button>
           </div>
         </header>
+
+        {/* Target directory */}
+        <div className="shrink-0 border-b border-border px-4 py-1.5">
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+            <FolderOpen className="h-3 w-3 shrink-0 text-amber-400" aria-hidden />
+            <span className="truncate font-mono">
+              {targetDir || 'Server directory (default)'}
+            </span>
+          </div>
+          {!targetDir && (
+            <p className="mt-0.5 text-[9px] text-muted-foreground/60">
+              Configure a project folder in the Workflow Chat to target a specific repository.
+            </p>
+          )}
+        </div>
 
         {/* Error banner */}
         {error && (

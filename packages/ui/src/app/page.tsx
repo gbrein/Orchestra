@@ -16,6 +16,8 @@ import { apiPost, apiDelete } from '@/lib/api'
 import { createResourceNode } from '@/lib/canvas-utils'
 import { OrchestraCanvas, type UndoRedoControls } from '@/components/canvas/orchestra-canvas'
 import { WorkflowToolbar } from '@/components/canvas/workflow-toolbar'
+import { MaestroOverlay } from '@/components/canvas/maestro-overlay'
+import { AdvisorFab } from '@/components/canvas/advisor-fab'
 import { WorkflowChat, type WorkflowLogEntry } from '@/components/panels/workflow-chat'
 import { hasAgentChain, buildChain } from '@/lib/chain-utils'
 import { getSocket } from '@/lib/socket'
@@ -42,13 +44,14 @@ import { WorkspacePlanEditor } from '@/components/panels/workspace-plan-editor'
 import { GitPanel } from '@/components/panels/git-panel'
 import { CostDashboard } from '@/components/panels/cost-dashboard'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
-import { apiGet } from '@/lib/api'
+import { apiGet, apiPatch } from '@/lib/api'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { ComplexityContext, useComplexityState } from '@/hooks/use-complexity'
 import { useSocket } from '@/hooks/use-socket'
 import { useCanvasPersistence } from '@/hooks/use-canvas-persistence'
 import { useAgentStatus } from '@/hooks/use-agent-status'
 import { useNotifications } from '@/hooks/use-notifications'
+import { injectMessagesIntoCache, type ChatMessage } from '@/hooks/use-agent-stream'
 import { useApprovals } from '@/hooks/use-approvals'
 import type { AgentNodeData } from '@/lib/canvas-utils'
 import type { AgentStatus, DiscussionTable, CreateDiscussionInput } from '@orchestra/shared'
@@ -112,6 +115,13 @@ export default function Home() {
   const [workflowChatOpen, setWorkflowChatOpen] = useState(false)
   const [workflowLog, setWorkflowLog] = useState<WorkflowLogEntry[]>([])
   const [workflowMode, setWorkflowMode] = useState<import('@orchestra/shared').AgentMode>('default')
+  const [maestroEnabled, setMaestroEnabled] = useState(true)
+  const [maestroStatus, setMaestroStatus] = useState<'idle' | 'thinking' | 'decided'>('idle')
+  const [maestroLastAction, setMaestroLastAction] = useState<'continue' | 'redirect' | 'conclude' | null>(null)
+  const [maestroLastTargetAgent, setMaestroLastTargetAgent] = useState<string | null>(null)
+  const [advisorRunning, setAdvisorRunning] = useState(false)
+  const [advisorModel, setAdvisorModel] = useState('claude-haiku-4-5-20251001')
+  const [workspaceWorkingDir, setWorkspaceWorkingDir] = useState<string | null>(null)
   const [createAgentOpen, setCreateAgentOpen] = useState(false)
   const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
@@ -149,6 +159,32 @@ export default function Home() {
     loadCanvas, saveCanvas, switchWorkspace, createWorkspace,
     renameWorkspace, deleteWorkspace,
   } = useCanvasPersistence()
+
+  // Fetch workspace workingDirectory when workspace changes
+  useEffect(() => {
+    if (!activeWorkspaceId) {
+      setWorkspaceWorkingDir(null)
+      return
+    }
+    apiGet<Array<{ id: string; workingDirectory?: string | null }>>('/api/workspaces')
+      .then((ws) => {
+        const match = ws.find((w) => w.id === activeWorkspaceId)
+        setWorkspaceWorkingDir(match?.workingDirectory ?? null)
+      })
+      .catch(() => {})
+  }, [activeWorkspaceId])
+
+  const handleWorkingDirectoryChange = useCallback(async (dir: string | null) => {
+    if (!activeWorkspaceId) return
+    try {
+      await apiPatch(`/api/workspaces/${activeWorkspaceId}`, {
+        workingDirectory: dir,
+      })
+      setWorkspaceWorkingDir(dir)
+    } catch (err) {
+      console.error('Failed to save working directory:', err)
+    }
+  }, [activeWorkspaceId])
 
   const handleAgentStatusChange = useCallback((agentId: string, status: import('@orchestra/shared').AgentStatus) => {
     setNodes((prev) =>
@@ -447,9 +483,10 @@ export default function Home() {
     }, 300)
   }, [nodes, edges, saveCanvas, switchWorkspace])
 
-  const handleCreateWorkspace = useCallback(async (name: string) => {
+  const handleCreateWorkspace = useCallback(async (name: string, workingDirectory?: string) => {
     if (nodes.length > 0) saveCanvas(nodes, edges)
-    await createWorkspace(name)
+    await createWorkspace(name, workingDirectory)
+    if (workingDirectory) setWorkspaceWorkingDir(workingDirectory)
     setNodes([])
     setEdges([])
     setShowHome(false)
@@ -610,13 +647,93 @@ export default function Home() {
     setGitPanelOpen(true)
   }, [])
 
-  const handleRunWorkflow = useCallback((message: string) => {
+  const handleRunWorkflow = useCallback(async (message: string) => {
     const chain = buildChain(nodes, edges)
-    if (chain.length < 2) return
+    if (chain.length < 2) {
+      setWorkflowLog((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: 'error' as const,
+          content: chain.length === 0
+            ? 'No agents on the canvas. Add at least 2 connected agents to run a workflow.'
+            : 'Connect at least 2 agents with edges to form a workflow chain.',
+          timestamp: new Date(),
+        },
+      ])
+      return
+    }
+
+    // Ensure all agents in the chain exist in the database
+    for (const step of chain) {
+      try {
+        await apiGet(`/api/agents/${step.nodeId}`)
+      } catch {
+        // Agent not in DB — sync it now
+        const node = nodes.find((n) => n.id === step.nodeId)
+        const data = node?.data as AgentNodeData | undefined
+        try {
+          const saved = await apiPost<{ id: string }>('/api/agents', {
+            id: step.nodeId,
+            name: data?.name ?? step.agentName,
+            persona: `You are ${data?.name ?? step.agentName}. ${data?.description ?? ''}`.trim(),
+            purpose: data?.purpose,
+            model: data?.model,
+            scope: [],
+            allowedTools: [],
+          })
+          // If DB assigned a different ID, update the node
+          if (saved.id !== step.nodeId) {
+            setNodes((prev) => prev.map((n) =>
+              n.id === step.nodeId ? { ...n, id: saved.id } : n,
+            ))
+          }
+        } catch (syncErr) {
+          setWorkflowLog((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              type: 'error' as const,
+              content: `Agent "${step.agentName}" could not be saved to database. Please recreate it.`,
+              timestamp: new Date(),
+            },
+          ])
+          return
+        }
+      }
+    }
 
     const sock = getSocket()
     if (!sock.connected) {
       sock.connect()
+      // Give socket a moment to connect before emitting
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('timeout'))
+        }, 3000)
+        sock.once('connect', () => {
+          clearTimeout(timeout)
+          resolve()
+        })
+        // If already connected by the time listener fires
+        if (sock.connected) {
+          clearTimeout(timeout)
+          resolve()
+        }
+      }).catch(() => {
+        setWorkflowLog((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            type: 'error' as const,
+            content: 'Cannot connect to server. Make sure the backend is running on port 3001.',
+            timestamp: new Date(),
+          },
+        ])
+        return
+      })
+      // If we returned from the catch, don't continue
+      if (!sock.connected) return
     }
 
     const chainId = crypto.randomUUID()
@@ -657,12 +774,22 @@ export default function Home() {
       chainId,
       definition,
       initialMessage: message,
+      workspaceId: activeWorkspaceId ?? undefined,
+      maestro: maestroEnabled,
     })
-  }, [nodes, edges, workflowMode])
+  }, [nodes, edges, workflowMode, activeWorkspaceId, maestroEnabled])
 
   const handleStopWorkflow = useCallback(() => {
+    const chainId = workflowChainIdRef.current
+    if (chainId) {
+      const sock = getSocket()
+      sock.emit('chain:stop', { chainId })
+    }
     setWorkflowRunning(false)
     setWorkflowStep(null)
+    setMaestroStatus('idle')
+    setMaestroLastAction(null)
+    setMaestroLastTargetAgent(null)
     setWorkflowLog((prev) => [
       ...prev,
       {
@@ -694,9 +821,58 @@ export default function Home() {
     setWorkflowChatOpen(true)
   }, [])
 
-  // Track current chain ID and steps for event listeners
+  const handleAdvisorRequest = useCallback((model: string) => {
+    const chainId = lastCompletedChainIdRef.current
+    if (!chainId) return
+    const sock = getSocket()
+    sock.emit('advisor:analyze', { chainId, model })
+  }, [])
+
+  const handleApplySkill = useCallback(async (agentId: string, skillName: string) => {
+    const installRes = await apiPost<{ id: string }>('/api/skills/install', {
+      name: skillName,
+      source: 'marketplace',
+    })
+    await apiPost(`/api/agents/${agentId}/skills/${installRes.id}`, {})
+  }, [])
+
+  const handleUpdatePersona = useCallback(async (agentId: string, newPersona: string) => {
+    await apiPatch(`/api/agents/${agentId}`, { persona: newPersona })
+  }, [])
+
+  const handleMaestroRedirectRespond = useCallback((requestId: string, approved: boolean) => {
+    const chainId = workflowChainIdRef.current
+    if (!chainId) return
+
+    const sock = getSocket()
+    sock.emit('chain:maestro_redirect_response', { chainId, requestId, approved })
+
+    // Update log: remove the request entry and add result
+    setWorkflowLog((prev) => {
+      const updated = prev.map((e) =>
+        e.type === 'maestro_redirect_request' && e.requestId === requestId
+          ? { ...e, requestId: undefined }
+          : e,
+      )
+      return [
+        ...updated,
+        {
+          id: crypto.randomUUID(),
+          type: approved ? 'maestro_redirect_approved' as WorkflowLogEntry['type'] : 'maestro_redirect_declined' as WorkflowLogEntry['type'],
+          content: approved ? 'Redirect approved' : 'Continuing forward',
+          timestamp: new Date(),
+        },
+      ]
+    })
+  }, [])
+
+  // Track current chain ID, steps, per-step usage, per-step chat messages, and accumulated text
   const workflowChainIdRef = useRef<string>('')
+  const lastCompletedChainIdRef = useRef<string>('')
   const workflowStepsRef = useRef<ReturnType<typeof buildChain>>([])
+  const workflowStepUsageRef = useRef<Map<number, import('@orchestra/shared').TokenUsage>>(new Map())
+  const workflowStepMsgsRef = useRef<Map<number, ChatMessage[]>>(new Map())
+  const workflowStepTextRef = useRef<Map<number, string>>(new Map())
 
   // Listen for chain socket events to update workflow log
   const chainListenersAttachedRef = useRef(false)
@@ -706,7 +882,7 @@ export default function Home() {
 
     const socket = getSocket()
 
-    socket.on('chain:step_start', (data: { chainId: string; stepIndex: number; agentId: string }) => {
+    socket.on('chain:step_start', (data: { chainId: string; stepIndex: number; agentId: string; cwd?: string }) => {
       if (data.chainId !== workflowChainIdRef.current) return
       const steps = workflowStepsRef.current
       const step = steps[data.stepIndex]
@@ -721,9 +897,109 @@ export default function Home() {
           content: '',
           agentName,
           stepIndex: data.stepIndex,
+          cwd: data.cwd,
           timestamp: new Date(),
         },
       ])
+      // Update canvas node status to running
+      setNodes((prev) => prev.map((n) =>
+        n.id === data.agentId ? { ...n, data: { ...n.data, status: 'running' } } : n,
+      ))
+      // Init step tracking
+      workflowStepMsgsRef.current.set(data.stepIndex, [])
+      workflowStepTextRef.current.set(data.stepIndex, '')
+    })
+
+    // Streaming text — accumulate in ref, update single log entry per step
+    socket.on('chain:step_text', (data: { chainId: string; stepIndex: number; agentId: string; content: string; partial: boolean }) => {
+      if (data.chainId !== workflowChainIdRef.current) return
+
+      // Accumulate text in ref (source of truth)
+      const prev = workflowStepTextRef.current.get(data.stepIndex) ?? ''
+      const accumulated = prev + data.content
+      workflowStepTextRef.current.set(data.stepIndex, accumulated)
+
+      // Update or create a single step_text entry for this stepIndex
+      setWorkflowLog((logPrev) => {
+        const idx = logPrev.findIndex(
+          (e) => e.type === 'step_text' && e.stepIndex === data.stepIndex,
+        )
+
+        const entry = {
+          id: idx >= 0 ? logPrev[idx]!.id : crypto.randomUUID(),
+          type: 'step_text' as const,
+          content: accumulated,
+          stepIndex: data.stepIndex,
+          partial: data.partial,
+          timestamp: idx >= 0 ? logPrev[idx]!.timestamp : new Date(),
+        }
+
+        if (idx >= 0) {
+          return [...logPrev.slice(0, idx), entry, ...logPrev.slice(idx + 1)]
+        }
+        return [...logPrev, entry]
+      })
+    })
+
+    // Tool usage
+    socket.on('chain:step_tool_use', (data: { chainId: string; stepIndex: number; agentId: string; toolName: string; input: unknown; id: string }) => {
+      if (data.chainId !== workflowChainIdRef.current) return
+      const steps = workflowStepsRef.current
+      const step = steps[data.stepIndex]
+      const agentName = step?.agentName ?? `Agent ${data.stepIndex + 1}`
+
+      // Collect for step history
+      const stepMsgs = workflowStepMsgsRef.current.get(data.stepIndex) ?? []
+      stepMsgs.push({ id: data.id, role: 'tool', content: data.toolName, toolUse: { toolName: data.toolName, input: data.input }, timestamp: new Date() })
+      workflowStepMsgsRef.current.set(data.stepIndex, stepMsgs)
+
+      setWorkflowLog((prev) => [
+        ...prev,
+        {
+          id: data.id,
+          type: 'step_tool_use' as const,
+          content: data.toolName,
+          agentName,
+          stepIndex: data.stepIndex,
+          toolUse: { toolName: data.toolName, input: data.input, id: data.id },
+          timestamp: new Date(),
+        },
+      ])
+    })
+
+    // Tool result — update matching tool_use entry with output
+    socket.on('chain:step_tool_result', (data: { chainId: string; stepIndex: number; agentId: string; toolName: string; output: unknown; toolUseId: string }) => {
+      if (data.chainId !== workflowChainIdRef.current) return
+
+      // Update step history tool message
+      const stepMsgs = workflowStepMsgsRef.current.get(data.stepIndex) ?? []
+      const toolMsg = stepMsgs.find((m) => m.role === 'tool' && m.id === data.toolUseId)
+      if (toolMsg?.toolUse) {
+        toolMsg.toolUse.output = data.output
+      }
+
+      setWorkflowLog((prev) => {
+        const toolIdx = prev.findIndex(
+          (e) => e.type === 'step_tool_use' && e.toolUse?.id === data.toolUseId,
+        )
+        if (toolIdx < 0) return prev
+
+        const existing = prev[toolIdx]!
+        return [
+          ...prev.slice(0, toolIdx),
+          {
+            ...existing,
+            toolUse: { ...existing.toolUse!, output: data.output },
+          },
+          ...prev.slice(toolIdx + 1),
+        ]
+      })
+    })
+
+    // Per-step usage — store on a ref so step_complete can include it
+    socket.on('chain:step_usage', (data: { chainId: string; stepIndex: number; agentId: string; usage: import('@orchestra/shared').TokenUsage }) => {
+      if (data.chainId !== workflowChainIdRef.current) return
+      workflowStepUsageRef.current.set(data.stepIndex, data.usage)
     })
 
     socket.on('chain:step_complete', (data: { chainId: string; stepIndex: number; agentId: string; output: string }) => {
@@ -731,30 +1007,75 @@ export default function Home() {
       const steps = workflowStepsRef.current
       const step = steps[data.stepIndex]
       const agentName = step?.agentName ?? `Agent ${data.stepIndex + 1}`
+      const usage = workflowStepUsageRef.current.get(data.stepIndex)
 
-      setWorkflowLog((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          type: 'step_complete' as const,
-          content: data.output,
-          agentName,
-          stepIndex: data.stepIndex,
-          timestamp: new Date(),
-        },
-      ])
+      setWorkflowLog((prev) => {
+        // Mark the step_start entry as completed (stops spinner)
+        const updated = prev.map((entry) =>
+          entry.type === 'step_start' && entry.stepIndex === data.stepIndex
+            ? { ...entry, completed: true }
+            : entry,
+        )
+        // Append the step_complete entry with output
+        return [
+          ...updated,
+          {
+            id: crypto.randomUUID(),
+            type: 'step_complete' as const,
+            content: data.output,
+            agentName,
+            stepIndex: data.stepIndex,
+            usage,
+            timestamp: new Date(),
+          },
+        ]
+      })
+      // Update canvas node status back to idle
+      setNodes((prev) => prev.map((n) =>
+        n.id === data.agentId ? { ...n, data: { ...n.data, status: 'idle' } } : n,
+      ))
+      // Build definitive step history from the complete output
+      const stepMsgs = workflowStepMsgsRef.current.get(data.stepIndex) ?? []
+      const finalMsgs = [
+        ...stepMsgs.filter((m) => m.role === 'tool'),
+        ...(data.output ? [{ id: crypto.randomUUID(), role: 'assistant' as const, content: data.output, timestamp: new Date() }] : []),
+      ]
+      workflowStepMsgsRef.current.set(data.stepIndex, finalMsgs)
+      // Auto-inject into agent chat cache so opening the agent
+      // from canvas/sidebar shows the workflow history immediately
+      if (finalMsgs.length > 0) {
+        injectMessagesIntoCache(data.agentId, finalMsgs, usage)
+      }
     })
 
     socket.on('chain:complete', (data: { chainId: string; totalSteps: number }) => {
       if (data.chainId !== workflowChainIdRef.current) return
       setWorkflowRunning(false)
       setWorkflowStep(null)
+      setMaestroStatus('idle')
+      setMaestroLastAction(null)
+      lastCompletedChainIdRef.current = data.chainId
+
+      // Calculate total usage across all steps
+      let totalIn = 0
+      let totalOut = 0
+      let totalCost = 0
+      workflowStepUsageRef.current.forEach((u) => {
+        totalIn += u.inputTokens
+        totalOut += u.outputTokens
+        totalCost += u.estimatedCostUsd ?? 0
+      })
+      const totalUsage = totalIn > 0 ? { inputTokens: totalIn, outputTokens: totalOut, estimatedCostUsd: totalCost } : undefined
+      workflowStepUsageRef.current.clear()
+      workflowStepTextRef.current.clear()
+
       setWorkflowLog((prev) => [
         ...prev,
         {
           id: crypto.randomUUID(),
           type: 'chain_complete' as const,
           content: `Completed ${data.totalSteps} steps`,
+          usage: totalUsage,
           timestamp: new Date(),
         },
       ])
@@ -772,6 +1093,133 @@ export default function Home() {
           id: crypto.randomUUID(),
           type: 'error' as const,
           content: `${agentName}: ${data.error}`,
+          timestamp: new Date(),
+        },
+      ])
+    })
+
+    // Maestro events
+    socket.on('chain:maestro_decision', (data) => {
+      if (data.chainId !== workflowChainIdRef.current) return
+
+      // Detect "thinking" vs actual decision
+      const isThinking = data.reasoning === 'Evaluating step output...'
+      if (isThinking) {
+        setMaestroStatus('thinking')
+        return
+      }
+
+      // Update canvas-level maestro status
+      setMaestroStatus('decided')
+      setMaestroLastAction(data.action)
+      setMaestroLastTargetAgent(data.targetAgentName || null)
+      // Reset to idle after a moment so the badge fades
+      setTimeout(() => {
+        setMaestroStatus('idle')
+        setMaestroLastAction(null)
+        setMaestroLastTargetAgent(null)
+      }, 4000)
+
+      // Replace any existing "thinking" entry with the actual decision
+      setWorkflowLog((prev) => {
+        const withoutThinking = prev.filter((e) => e.type !== 'maestro_thinking')
+        const entryType: WorkflowLogEntry['type'] = 'maestro_decision'
+        return [
+          ...withoutThinking,
+          {
+            id: crypto.randomUUID(),
+            type: entryType,
+            content: data.reasoning,
+            maestroAction: data.action,
+            timestamp: new Date(),
+          },
+        ]
+      })
+    })
+
+    socket.on('chain:maestro_redirect_request', (data) => {
+      if (data.chainId !== workflowChainIdRef.current) return
+
+      const entryType: WorkflowLogEntry['type'] = 'maestro_redirect_request'
+      setWorkflowLog((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: entryType,
+          content: data.reasoning,
+          agentName: data.toAgent,
+          requestId: data.requestId,
+          timestamp: new Date(),
+        },
+      ])
+    })
+
+    // Advisor events
+    socket.on('advisor:analyzing', (data) => {
+      if (data.chainId !== lastCompletedChainIdRef.current) return
+      setAdvisorRunning(true)
+      const entryType: WorkflowLogEntry['type'] = 'advisor_analyzing'
+      setWorkflowLog((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: entryType,
+          content: 'Analyzing workflow run...',
+          timestamp: new Date(),
+        },
+      ])
+    })
+
+    socket.on('advisor:result', (data) => {
+      if (data.chainId !== lastCompletedChainIdRef.current) return
+      setAdvisorRunning(false)
+      const entryType: WorkflowLogEntry['type'] = 'advisor_result'
+      setWorkflowLog((prev) => {
+        const withoutAnalyzing = prev.filter((e) => e.type !== 'advisor_analyzing')
+        return [
+          ...withoutAnalyzing,
+          {
+            id: crypto.randomUUID(),
+            type: entryType,
+            content: data.result.overallAssessment,
+            advisorResult: data.result,
+            timestamp: new Date(),
+          },
+        ]
+      })
+    })
+
+    socket.on('advisor:error', (data) => {
+      if (data.chainId !== lastCompletedChainIdRef.current) return
+      setAdvisorRunning(false)
+      setWorkflowLog((prev) => {
+        const withoutAnalyzing = prev.filter((e) => e.type !== 'advisor_analyzing')
+        return [
+          ...withoutAnalyzing,
+          {
+            id: crypto.randomUUID(),
+            type: 'error' as const,
+            content: `Advisor analysis failed: ${data.error}`,
+            timestamp: new Date(),
+          },
+        ]
+      })
+    })
+
+    // Listen for executor-level errors (e.g. agent not found, chain execution failed)
+    // These are emitted as 'agent:error' by the backend when the whole chain fails
+    socket.on('agent:error', (data: { agentId: string; sessionId: string; error: string; type: string }) => {
+      // Match by chainId (stored in agentId field for chain-level errors)
+      if (data.agentId !== workflowChainIdRef.current) return
+
+      setWorkflowRunning(false)
+      setWorkflowStep(null)
+      setWorkflowLog((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: 'error' as const,
+          content: data.error,
           timestamp: new Date(),
         },
       ])
@@ -948,6 +1396,20 @@ export default function Home() {
                 onRun={handleOpenWorkflowChat}
                 onStop={handleStopWorkflow}
                 onOpenChat={handleOpenWorkflowChat}
+              />
+              <MaestroOverlay
+                visible={hasAgentChain(nodes, edges)}
+                enabled={maestroEnabled}
+                status={maestroStatus}
+                lastAction={maestroLastAction}
+                lastTargetAgent={maestroLastTargetAgent}
+                onToggle={setMaestroEnabled}
+              />
+              <AdvisorFab
+                visible={hasAgentChain(nodes, edges)}
+                running={advisorRunning}
+                disabled={!lastCompletedChainIdRef.current || workflowRunning}
+                onClick={() => handleAdvisorRequest(advisorModel)}
               />
               <OrchestraCanvas
                 initialNodes={nodes}
@@ -1317,11 +1779,54 @@ export default function Home() {
             isRunning={workflowRunning}
             log={workflowLog}
             mode={workflowMode}
+            hasWorkspace={!!activeWorkspaceId}
+            maestroEnabled={maestroEnabled}
+            onMaestroToggle={setMaestroEnabled}
+            onMaestroRedirectRespond={handleMaestroRedirectRespond}
+            hasCompletedRun={!!lastCompletedChainIdRef.current}
+            advisorRunning={advisorRunning}
+            advisorModel={advisorModel}
+            onAdvisorRequest={handleAdvisorRequest}
+            onAdvisorModelChange={setAdvisorModel}
+            onApplySkill={handleApplySkill}
+            onUpdatePersona={handleUpdatePersona}
+            workingDirectory={workspaceWorkingDir}
+            onWorkingDirectoryChange={(dir) => void handleWorkingDirectoryChange(dir)}
             onSendMessage={handleWorkflowSendMessage}
             onRun={handleRunWorkflow}
             onStop={handleStopWorkflow}
             onModeChange={setWorkflowMode}
             onClearLog={handleClearWorkflowLog}
+            onStepClick={(stepIndex) => {
+              const steps = workflowStepsRef.current
+              const step = steps[stepIndex]
+              if (!step) return
+              const msgs = workflowStepMsgsRef.current.get(stepIndex) ?? []
+              if (msgs.length === 0) {
+                // Show feedback — no history available yet
+                setWorkflowLog((prev) => [
+                  ...prev,
+                  {
+                    id: crypto.randomUUID(),
+                    type: 'system' as const,
+                    content: `No conversation history available for ${step.agentName} yet.`,
+                    timestamp: new Date(),
+                  },
+                ])
+                return
+              }
+              // Close workflow chat and open agent chat with step history
+              setWorkflowChatOpen(false)
+              injectMessagesIntoCache(step.nodeId, msgs)
+              setSelectedAgent({
+                id: step.nodeId,
+                name: step.agentName,
+                status: 'idle' as AgentStatus,
+                model: step.model,
+              })
+              // Small delay for Sheet transition
+              setTimeout(() => setChatOpen(true), 200)
+            }}
           />
         </SheetContent>
       </Sheet>
@@ -1345,7 +1850,7 @@ export default function Home() {
       </Sheet>
 
       {/* Git Panel */}
-      <GitPanel open={gitPanelOpen} onOpenChange={setGitPanelOpen} />
+      <GitPanel key={`git-${activeWorkspaceId}-${workspaceWorkingDir}`} open={gitPanelOpen} onOpenChange={setGitPanelOpen} workspaceId={activeWorkspaceId} />
     </div>
     </ComplexityContext.Provider>
   )

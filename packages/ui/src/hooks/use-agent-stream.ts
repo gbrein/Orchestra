@@ -78,6 +78,14 @@ const messageCache = new Map<string, CachedSession>()
 // Evict entries older than 30 minutes to avoid unbounded growth
 const CACHE_TTL_MS = 30 * 60 * 1000
 
+/**
+ * Inject messages into the agent stream cache so the agent chat panel
+ * can display them (e.g. workflow step history).
+ */
+export function injectMessagesIntoCache(agentId: string, messages: ChatMessage[], tokenUsage?: TokenUsage | null): void {
+  messageCache.set(agentId, { messages, tokenUsage: tokenUsage ?? null, updatedAt: Date.now() })
+}
+
 function pruneCache() {
   const now = Date.now()
   for (const [key, entry] of messageCache) {
