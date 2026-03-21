@@ -977,12 +977,16 @@ export default function Home() {
       ))
       // Build definitive step history from the complete output
       const stepMsgs = workflowStepMsgsRef.current.get(data.stepIndex) ?? []
-      // Replace or add the final assistant message with complete output
       const finalMsgs = [
         ...stepMsgs.filter((m) => m.role === 'tool'),
         ...(data.output ? [{ id: crypto.randomUUID(), role: 'assistant' as const, content: data.output, timestamp: new Date() }] : []),
       ]
       workflowStepMsgsRef.current.set(data.stepIndex, finalMsgs)
+      // Auto-inject into agent chat cache so opening the agent
+      // from canvas/sidebar shows the workflow history immediately
+      if (finalMsgs.length > 0) {
+        injectMessagesIntoCache(data.agentId, finalMsgs, usage)
+      }
     })
 
     socket.on('chain:complete', (data: { chainId: string; totalSteps: number }) => {
