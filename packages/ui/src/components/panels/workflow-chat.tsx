@@ -14,6 +14,7 @@ import {
   ChevronUp,
   FolderOpen,
   GitBranch,
+  Download,
   Lightbulb,
   Loader2,
   Play,
@@ -95,6 +96,7 @@ export interface WorkflowChatProps {
   readonly onAdvisorModelChange: (model: string) => void
   readonly onApplySkill: (agentId: string, skillName: string) => Promise<void>
   readonly onUpdatePersona: (agentId: string, newPersona: string) => Promise<void>
+  readonly onSaveOutput?: (content: string) => void
 }
 
 // ─── Log entry component ────────────────────────────────────────────────────
@@ -105,12 +107,14 @@ function LogEntry({
   onMaestroRedirectRespond,
   onApplySkill,
   onUpdatePersona,
+  onSaveOutput,
 }: {
   readonly entry: WorkflowLogEntry
   readonly onStepClick?: (stepIndex: number) => void
   readonly onMaestroRedirectRespond?: (requestId: string, approved: boolean) => void
   readonly onApplySkill?: (agentId: string, skillName: string) => Promise<void>
   readonly onUpdatePersona?: (agentId: string, newPersona: string) => Promise<void>
+  readonly onSaveOutput?: (content: string) => void
 }) {
   if (entry.type === 'user') {
     return (
@@ -208,17 +212,33 @@ function LogEntry({
 
   if (entry.type === 'chain_complete') {
     return (
-      <div className="flex items-center gap-2 rounded-md bg-green-500/10 px-3 py-2 text-xs text-green-400" role="listitem">
-        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
-        <span className="font-medium">Workflow completed</span>
-        {entry.usage && (
-          <span className="text-green-400/70">
-            &middot; {(entry.usage.inputTokens + entry.usage.outputTokens).toLocaleString()} tokens
-            {entry.usage.estimatedCostUsd !== undefined && entry.usage.estimatedCostUsd > 0 && (
-              <> &middot; ${entry.usage.estimatedCostUsd.toFixed(4)}</>
-            )}
-          </span>
-        )}
+      <div className="rounded-md bg-green-500/10 px-3 py-2" role="listitem">
+        <div className="flex items-center gap-2 text-xs text-green-400">
+          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span className="font-medium">Workflow completed</span>
+          {entry.usage && (
+            <span className="text-green-400/70">
+              &middot; {(entry.usage.inputTokens + entry.usage.outputTokens).toLocaleString()} tokens
+              {entry.usage.estimatedCostUsd !== undefined && entry.usage.estimatedCostUsd > 0 && (
+                <> &middot; ${entry.usage.estimatedCostUsd.toFixed(4)}</>
+              )}
+            </span>
+          )}
+          <div className="flex-1" />
+          {onSaveOutput && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 gap-1 px-2 text-[10px] text-green-400/70 hover:text-green-400"
+              onClick={() => onSaveOutput(entry.content)}
+              aria-label="Save workflow output to project folder"
+              title="Save output to project folder"
+            >
+              <Download className="h-3 w-3" aria-hidden />
+              Save
+            </Button>
+          )}
+        </div>
       </div>
     )
   }
@@ -364,6 +384,7 @@ export function WorkflowChat({
   onAdvisorModelChange,
   onApplySkill,
   onUpdatePersona,
+  onSaveOutput,
 }: WorkflowChatProps) {
   const [value, setValue] = useState('')
   const [dirExpanded, setDirExpanded] = useState(false)
@@ -627,7 +648,7 @@ export function WorkflowChat({
         ) : (
           <>
             {log.map((entry) => (
-              <LogEntry key={entry.id} entry={entry} onStepClick={onStepClick} onMaestroRedirectRespond={onMaestroRedirectRespond} onApplySkill={onApplySkill} onUpdatePersona={onUpdatePersona} />
+              <LogEntry key={entry.id} entry={entry} onStepClick={onStepClick} onMaestroRedirectRespond={onMaestroRedirectRespond} onApplySkill={onApplySkill} onUpdatePersona={onUpdatePersona} onSaveOutput={onSaveOutput} />
             ))}
             <div ref={bottomRef} aria-hidden />
           </>

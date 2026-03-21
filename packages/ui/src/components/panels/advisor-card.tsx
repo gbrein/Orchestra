@@ -158,7 +158,7 @@ export function AdvisorCard({ result, onApplySkill, onUpdatePersona }: AdvisorCa
       </div>
 
       {/* Suggestions */}
-      {result.suggestions.length > 0 && (
+      {result.suggestions.length > 0 ? (
         <div className="flex flex-col gap-2 px-3 pb-3">
           {result.suggestions.map((suggestion) => (
             <SuggestionRow
@@ -168,6 +168,11 @@ export function AdvisorCard({ result, onApplySkill, onUpdatePersona }: AdvisorCa
               onUpdatePersona={onUpdatePersona}
             />
           ))}
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 px-3 pb-3 text-xs text-green-400">
+          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>Everything looks good — no improvements needed.</span>
         </div>
       )}
     </div>

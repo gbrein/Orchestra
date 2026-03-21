@@ -27,6 +27,8 @@ export interface MaestroContext {
   readonly completedStepIndex: number
   readonly totalSteps: number
   readonly memories: readonly string[]
+  readonly rigor?: number
+  readonly customInstructions?: string
 }
 
 export type MaestroAction = 'continue' | 'redirect' | 'conclude'
@@ -149,7 +151,7 @@ function buildMaestroSystemPrompt(context: MaestroContext): string {
 
   return `You are the Maestro — an intelligent workflow orchestrator. Your job is to evaluate agent output and decide the next action.
 
-IMPORTANT: Always respond in the SAME LANGUAGE as the workflow objective below. If the objective is in Portuguese, respond in Portuguese. If in English, respond in English. Match the user's language exactly.
+CRITICAL LANGUAGE RULE: You MUST respond in the SAME LANGUAGE as the previous agent's output. If the agent wrote in Portuguese, respond in Portuguese. If in English, respond in English. This applies to ALL fields: "reasoning", "message", and "learning". The "message" field is especially important — it will be sent to the next agent, and you MUST include an instruction telling the next agent to also respond in that same language. Example: if the workflow is in Portuguese, start the message with "Responda em português." before the rest of the instructions.
 
 ## Your Responsibilities
 1. Evaluate if the current step's output is sufficient and high quality
@@ -179,15 +181,24 @@ ${memoriesBlock}
 - Example for redirect: "Your previous output was missing error handling. Please redo the task with proper try-catch blocks. Original request:\n\n[original objective]"
 - NEVER send a message that is just instructions without the actual work output — the next agent needs the data to work with.
 
+### Criticism level: ${context.rigor ?? 3}/5
+${buildRigorInstructions(context.rigor ?? 3)}
+
 ### Decision logic
 - If output is good enough, use action "continue" and pass a contextualized message WITH the output to the next agent
 - If output is missing something critical, use action "redirect" to retry the same step with better instructions
 - If the workflow objective has been fully achieved before all steps run, use action "conclude"
 - Always explain your reasoning so the user understands your decision
 - If you notice a recurring pattern (e.g., an agent always forgets something), record it as a learning
-- Prefer "continue" over "redirect" — only redirect for truly critical gaps
 
-## Response Format
+### About truncated outputs
+- Agent outputs may be cut off due to token limits — this is NORMAL behavior, NOT an error
+- If an output appears truncated (ends mid-sentence, has "[... truncated ...]"), do NOT redirect
+- Treat truncated output as complete work — the agent did its best within its token budget
+- Pass the truncated output as-is to the next agent — it can still work with partial results
+- Only redirect if the output is fundamentally wrong or missing critical parts, NOT because it was cut short
+
+${context.customInstructions ? `## Custom Instructions from User\n${context.customInstructions}\n` : ''}## Response Format
 You MUST respond with ONLY a JSON object (no markdown, no code fences):
 {
   "action": "continue" | "redirect" | "conclude",
@@ -198,9 +209,26 @@ You MUST respond with ONLY a JSON object (no markdown, no code fences):
 }`
 }
 
+function buildRigorInstructions(rigor: number): string {
+  switch (rigor) {
+    case 1:
+      return 'You are in RELAXED mode. Almost always continue. Only redirect for critical errors that would make the output unusable. Accept partial or imperfect work.'
+    case 2:
+      return 'You are in LENIENT mode. Accept most outputs. Only redirect when something clearly important is missing. Be forgiving of minor issues.'
+    case 3:
+      return 'You are in BALANCED mode (default). Evaluate fairly. Suggest redirects when meaningful improvements are needed, but not for minor issues. Prefer continuing over redirecting.'
+    case 4:
+      return 'You are in STRICT mode. Hold agents to higher standards. Redirect when output is incomplete, lacks important details, or misses key requirements. Still prefer continue for minor issues.'
+    case 5:
+      return 'You are in DEMANDING mode. Expect comprehensive, production-ready output. Redirect for any significant gap in quality, completeness, or correctness. Only continue when output fully meets expectations.'
+    default:
+      return 'You are in BALANCED mode (default). Evaluate fairly and prefer continuing over redirecting.'
+  }
+}
+
 function buildMaestroUserMessage(context: MaestroContext): string {
-  const outputPreview = context.currentStepOutput.length > 2000
-    ? context.currentStepOutput.slice(0, 2000) + '\n\n[... output truncated ...]'
+  const outputPreview = context.currentStepOutput.length > 6000
+    ? context.currentStepOutput.slice(0, 6000) + '\n\n[... output truncated for context window ...]'
     : context.currentStepOutput
 
   const currentAgent = context.agents[context.completedStepIndex]
@@ -219,6 +247,7 @@ ${outputPreview}
 
 Evaluate the output and decide what to do next.
 IMPORTANT: Your "message" field must include the full output above — the next agent receives ONLY your message as input.
+IMPORTANT: Detect the language of the output above. Your "message" MUST start with an instruction telling the next agent to respond in that same language (e.g., "Responda em português." or "Respond in English."). All your JSON fields (reasoning, message, learning) must also be in that language.
 Respond with JSON only.`
 }
 

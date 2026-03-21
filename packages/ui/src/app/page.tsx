@@ -18,6 +18,7 @@ import { OrchestraCanvas, type UndoRedoControls } from '@/components/canvas/orch
 import { WorkflowToolbar } from '@/components/canvas/workflow-toolbar'
 import { MaestroOverlay } from '@/components/canvas/maestro-overlay'
 import { AdvisorFab } from '@/components/canvas/advisor-fab'
+import { MaestroDrawer } from '@/components/panels/maestro-drawer'
 import { WorkflowChat, type WorkflowLogEntry } from '@/components/panels/workflow-chat'
 import { hasAgentChain, buildChain } from '@/lib/chain-utils'
 import { getSocket } from '@/lib/socket'
@@ -116,6 +117,9 @@ export default function Home() {
   const [workflowLog, setWorkflowLog] = useState<WorkflowLogEntry[]>([])
   const [workflowMode, setWorkflowMode] = useState<import('@orchestra/shared').AgentMode>('default')
   const [maestroEnabled, setMaestroEnabled] = useState(true)
+  const [maestroDrawerOpen, setMaestroDrawerOpen] = useState(false)
+  const [maestroRigor, setMaestroRigor] = useState<1 | 2 | 3 | 4 | 5>(3)
+  const [maestroCustomInstructions, setMaestroCustomInstructions] = useState('')
   const [maestroStatus, setMaestroStatus] = useState<'idle' | 'thinking' | 'decided'>('idle')
   const [maestroLastAction, setMaestroLastAction] = useState<'continue' | 'redirect' | 'conclude' | null>(null)
   const [maestroLastTargetAgent, setMaestroLastTargetAgent] = useState<string | null>(null)
@@ -776,8 +780,10 @@ export default function Home() {
       initialMessage: message,
       workspaceId: activeWorkspaceId ?? undefined,
       maestro: maestroEnabled,
+      maestroRigor,
+      maestroCustomInstructions: maestroCustomInstructions || undefined,
     })
-  }, [nodes, edges, workflowMode, activeWorkspaceId, maestroEnabled])
+  }, [nodes, edges, workflowMode, activeWorkspaceId, maestroEnabled, maestroRigor, maestroCustomInstructions])
 
   const handleStopWorkflow = useCallback(() => {
     const chainId = workflowChainIdRef.current
@@ -820,6 +826,63 @@ export default function Home() {
   const handleOpenWorkflowChat = useCallback(() => {
     setWorkflowChatOpen(true)
   }, [])
+
+  const handleSaveWorkflowOutput = useCallback(async (content: string) => {
+    // Collect all step outputs from the log
+    const stepOutputs = workflowLog
+      .filter((e) => e.type === 'step_complete' && e.content)
+      .map((e) => `## ${e.agentName ?? 'Agent'}\n\n${e.content}`)
+      .join('\n\n---\n\n')
+
+    const fullOutput = stepOutputs || content
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const filename = `workflow-output-${timestamp}.md`
+
+    // Determine target directory
+    const dir = workspaceWorkingDir || '.'
+
+    try {
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
+      const res = await fetch(`${API_BASE}/api/fs/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ directory: dir, filename, content: fullOutput }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setWorkflowLog((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            type: 'system' as const,
+            content: `Output saved to ${data.data.path}`,
+            timestamp: new Date(),
+          },
+        ])
+      } else {
+        setWorkflowLog((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            type: 'error' as const,
+            content: `Failed to save: ${data.error}`,
+            timestamp: new Date(),
+          },
+        ])
+      }
+    } catch (err) {
+      setWorkflowLog((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: 'error' as const,
+          content: `Failed to save: ${err instanceof Error ? err.message : 'Unknown error'}`,
+          timestamp: new Date(),
+        },
+      ])
+    }
+  }, [workflowLog, workspaceWorkingDir])
 
   const handleAdvisorRequest = useCallback((model: string) => {
     const chainId = lastCompletedChainIdRef.current
@@ -1010,13 +1073,20 @@ export default function Home() {
       const usage = workflowStepUsageRef.current.get(data.stepIndex)
 
       setWorkflowLog((prev) => {
-        // Mark the step_start entry as completed (stops spinner)
-        const updated = prev.map((entry) =>
-          entry.type === 'step_start' && entry.stepIndex === data.stepIndex
-            ? { ...entry, completed: true }
-            : entry,
-        )
-        // Append the step_complete entry with output
+        // Mark the step_start entry as completed and remove duplicates
+        const updated = prev
+          .filter((entry) => {
+            // Remove previous step_complete for this step (retry case)
+            if (entry.type === 'step_complete' && entry.stepIndex === data.stepIndex) return false
+            // Remove step_text for this step (output already shown in step_complete)
+            if (entry.type === 'step_text' && entry.stepIndex === data.stepIndex) return false
+            return true
+          })
+          .map((entry) =>
+            entry.type === 'step_start' && entry.stepIndex === data.stepIndex
+              ? { ...entry, completed: true }
+              : entry,
+          )
         return [
           ...updated,
           {
@@ -1158,6 +1228,7 @@ export default function Home() {
     socket.on('advisor:analyzing', (data) => {
       if (data.chainId !== lastCompletedChainIdRef.current) return
       setAdvisorRunning(true)
+      setWorkflowChatOpen(true)
       const entryType: WorkflowLogEntry['type'] = 'advisor_analyzing'
       setWorkflowLog((prev) => [
         ...prev,
@@ -1173,6 +1244,7 @@ export default function Home() {
     socket.on('advisor:result', (data) => {
       if (data.chainId !== lastCompletedChainIdRef.current) return
       setAdvisorRunning(false)
+      setWorkflowChatOpen(true)
       const entryType: WorkflowLogEntry['type'] = 'advisor_result'
       setWorkflowLog((prev) => {
         const withoutAnalyzing = prev.filter((e) => e.type !== 'advisor_analyzing')
@@ -1341,7 +1413,23 @@ export default function Home() {
   }, [nodes, edges, canvasLoaded, saveCanvas])
 
   const handleNodesChange = useCallback((updated: Node[]) => {
-    setNodes(updated)
+    // Detect removed nodes and clean up edges + DB
+    setNodes((prev) => {
+      const removedIds = new Set(
+        prev.filter((n) => !updated.some((u) => u.id === n.id)).map((n) => n.id),
+      )
+      if (removedIds.size > 0) {
+        // Remove edges connected to deleted nodes
+        setEdges((prevEdges) =>
+          prevEdges.filter((e) => !removedIds.has(e.source) && !removedIds.has(e.target)),
+        )
+        // Best-effort DB cleanup for agent nodes
+        for (const id of removedIds) {
+          void apiDelete(`/api/agents/${id}`).catch(() => {})
+        }
+      }
+      return updated
+    })
   }, [])
 
   return (
@@ -1403,7 +1491,7 @@ export default function Home() {
                 status={maestroStatus}
                 lastAction={maestroLastAction}
                 lastTargetAgent={maestroLastTargetAgent}
-                onToggle={setMaestroEnabled}
+                onClick={() => setMaestroDrawerOpen(true)}
               />
               <AdvisorFab
                 visible={hasAgentChain(nodes, edges)}
@@ -1767,6 +1855,24 @@ export default function Home() {
           </div>
         </SheetContent>
       </Sheet>
+      {/* Maestro Drawer */}
+      <Sheet open={maestroDrawerOpen} onOpenChange={setMaestroDrawerOpen}>
+        <SheetContent
+          side="right"
+          className="flex w-[380px] flex-col gap-0 p-0 sm:w-[400px] [&>button.absolute]:hidden"
+        >
+          <SheetTitle className="sr-only">Maestro Settings</SheetTitle>
+          <MaestroDrawer
+            enabled={maestroEnabled}
+            rigor={maestroRigor}
+            customInstructions={maestroCustomInstructions}
+            onToggle={setMaestroEnabled}
+            onRigorChange={setMaestroRigor}
+            onCustomInstructionsChange={setMaestroCustomInstructions}
+          />
+        </SheetContent>
+      </Sheet>
+
       {/* Workflow Chat */}
       <Sheet open={workflowChatOpen} onOpenChange={setWorkflowChatOpen}>
         <SheetContent
@@ -1790,6 +1896,7 @@ export default function Home() {
             onAdvisorModelChange={setAdvisorModel}
             onApplySkill={handleApplySkill}
             onUpdatePersona={handleUpdatePersona}
+            onSaveOutput={handleSaveWorkflowOutput}
             workingDirectory={workspaceWorkingDir}
             onWorkingDirectoryChange={(dir) => void handleWorkingDirectoryChange(dir)}
             onSendMessage={handleWorkflowSendMessage}

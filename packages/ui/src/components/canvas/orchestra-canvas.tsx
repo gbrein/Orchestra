@@ -342,7 +342,7 @@ function OrchestraCanvasInner({
         fitViewOptions={{ padding: 0.2 }}
         minZoom={0.2}
         maxZoom={2}
-        deleteKeyCode={null}
+        deleteKeyCode="Delete"
         className="bg-background"
       >
         <Background

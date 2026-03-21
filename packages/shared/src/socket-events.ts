@@ -33,7 +33,7 @@ export interface ClientToServerEvents {
   'loop:stop': (data: { agentId: string }) => void
   'loop:approve': (data: { agentId: string; loopId: string; approved: boolean }) => void
   'agent:set_mode': (data: { agentId: string; mode: AgentMode }) => void
-  'chain:execute': (data: { chainId?: string; definition: ChainDefinition; initialMessage: string; workspaceId?: string; maestro?: boolean }) => void
+  'chain:execute': (data: { chainId?: string; definition: ChainDefinition; initialMessage: string; workspaceId?: string; maestro?: boolean; maestroRigor?: number; maestroCustomInstructions?: string }) => void
   'chain:stop': (data: { chainId: string }) => void
   'chain:maestro_redirect_response': (data: { chainId: string; requestId: string; approved: boolean }) => void
   'advisor:analyze': (data: { chainId: string; model?: string }) => void
