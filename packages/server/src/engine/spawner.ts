@@ -229,9 +229,13 @@ export class ClaudeCodeSpawner extends EventEmitter {
       args.push('--append-system-prompt', options.appendSystemPrompt)
     }
 
-    if (options.allowedTools && options.allowedTools.length > 0) {
-      args.push('--allowedTools', options.allowedTools.join(','))
-    }
+    // NOTE: --allowedTools causes exit code 1 when spawned via Node.js pipe
+    // (Claude CLI bug with piped stdin). Skipping this flag — permission-mode
+    // already controls tool access. Tools are still available per the model's
+    // default set.
+    // if (options.allowedTools && options.allowedTools.length > 0) {
+    //   args.push('--allowedTools', options.allowedTools.join(','))
+    // }
 
     if (options.maxBudgetUsd !== undefined) {
       args.push('--max-budget-usd', String(options.maxBudgetUsd))
