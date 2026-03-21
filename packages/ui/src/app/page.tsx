@@ -1228,6 +1228,7 @@ export default function Home() {
     socket.on('advisor:analyzing', (data) => {
       if (data.chainId !== lastCompletedChainIdRef.current) return
       setAdvisorRunning(true)
+      setWorkflowChatOpen(true)
       const entryType: WorkflowLogEntry['type'] = 'advisor_analyzing'
       setWorkflowLog((prev) => [
         ...prev,
@@ -1243,6 +1244,7 @@ export default function Home() {
     socket.on('advisor:result', (data) => {
       if (data.chainId !== lastCompletedChainIdRef.current) return
       setAdvisorRunning(false)
+      setWorkflowChatOpen(true)
       const entryType: WorkflowLogEntry['type'] = 'advisor_result'
       setWorkflowLog((prev) => {
         const withoutAnalyzing = prev.filter((e) => e.type !== 'advisor_analyzing')
