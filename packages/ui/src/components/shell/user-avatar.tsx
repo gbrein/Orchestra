@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { LogOut, Settings, Palette } from 'lucide-react'
+import { LogOut, Settings } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils'
 
@@ -81,19 +81,6 @@ export function UserAvatar({ onSettingsClick }: UserAvatarProps) {
             <Settings className="h-3.5 w-3.5 text-muted-foreground" />
             Settings
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors"
-            onClick={() => {
-              setOpen(false)
-              onSettingsClick?.()
-            }}
-          >
-            <Palette className="h-3.5 w-3.5 text-muted-foreground" />
-            Appearance
-          </button>
-
           <div className="border-t border-border" />
 
           <button
