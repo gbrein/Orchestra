@@ -26,13 +26,34 @@ npm run dev      # opens at http://localhost:3000
 ```bash
 git clone https://github.com/gbrein/Orchestra.git
 cd Orchestra
-cp .env.example .env   # edit .env to set BETTER_AUTH_SECRET and ANTHROPIC_API_KEY
+cp .env.example .env   # edit .env (see below)
 docker compose up      # builds and starts all services
 ```
 
-This runs PostgreSQL, the Fastify backend, and the Next.js frontend in containers. Open [http://localhost:3000](http://localhost:3000).
+Edit `.env` before running:
+- **`BETTER_AUTH_SECRET`** — replace with a random string (e.g., `openssl rand -hex 32`)
+- **`ANTHROPIC_API_KEY`** — your Anthropic API key (required for agents to work)
 
-> **Note:** The server container installs Claude Code CLI. Set `ANTHROPIC_API_KEY` in your `.env` for agent execution to work.
+This starts 4 containers:
+
+| Container | Port | What it does |
+|-----------|------|-------------|
+| `orchestra-postgres` | 5432 | PostgreSQL database |
+| `orchestra-server` | 3001 | Fastify backend + Socket.IO + Claude Code CLI |
+| `orchestra-ui` | 3000 | Next.js frontend |
+| `orchestra-migrate` | — | Runs database migrations once, then stops |
+
+Open [http://localhost:3000](http://localhost:3000).
+
+```bash
+# Other Docker commands
+npm run docker:all           # same as docker compose up --build
+npm run docker:all:detach    # run in background
+npm run docker:up            # start only PostgreSQL (for local dev)
+npm run docker:down          # stop everything
+```
+
+> **You need:** Docker Desktop only. Node.js is NOT required for Docker mode.
 
 On first visit, create a local account (email/password). Then just describe what you want to build.
 
