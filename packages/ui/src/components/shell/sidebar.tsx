@@ -6,6 +6,7 @@ import {
   Plus, Home, FolderOpen, Activity, ClipboardList, GitBranch,
   GripVertical, Clock, Settings, Search,
 } from 'lucide-react'
+import { DRAG_TYPES } from '@/lib/canvas-utils'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -53,15 +54,16 @@ interface DragItem {
   readonly icon: React.ElementType
   readonly label: string
   readonly nodeType: NodeType
+  readonly mimeType: string
   readonly minTier: 'simple' | 'standard' | 'full'
 }
 
 const DRAG_ITEMS: readonly DragItem[] = [
-  { icon: Bot, label: 'Assistant', nodeType: 'agent', minTier: 'simple' },
-  { icon: Puzzle, label: 'Skill', nodeType: 'skill', minTier: 'simple' },
-  { icon: Shield, label: 'Safety Rule', nodeType: 'safety', minTier: 'standard' },
-  { icon: FolderOpen, label: 'Resource', nodeType: 'resource', minTier: 'standard' },
-  { icon: Plug, label: 'Connection', nodeType: 'connection', minTier: 'full' },
+  { icon: Bot, label: 'Assistant', nodeType: 'agent', mimeType: DRAG_TYPES.AGENT, minTier: 'simple' },
+  { icon: Puzzle, label: 'Skill', nodeType: 'skill', mimeType: DRAG_TYPES.SKILL, minTier: 'simple' },
+  { icon: Shield, label: 'Safety Rule', nodeType: 'safety', mimeType: DRAG_TYPES.POLICY, minTier: 'standard' },
+  { icon: FolderOpen, label: 'Resource', nodeType: 'resource', mimeType: DRAG_TYPES.RESOURCE, minTier: 'standard' },
+  { icon: Plug, label: 'Connection', nodeType: 'connection', mimeType: DRAG_TYPES.MCP, minTier: 'full' },
 ]
 
 // ─── Section: Browse navigation ─────────────────────────────────────────────
@@ -116,11 +118,8 @@ export function Sidebar({
   const isVisible = (minTier: 'simple' | 'standard' | 'full') =>
     TIER_ORDER[tier] >= TIER_ORDER[minTier]
 
-  function handleDragStart(e: React.DragEvent<HTMLElement>, nodeType: NodeType) {
-    e.dataTransfer.setData(
-      'application/orchestra-node',
-      JSON.stringify({ type: nodeType }),
-    )
+  function handleDragStart(e: React.DragEvent<HTMLElement>, item: DragItem) {
+    e.dataTransfer.setData(item.mimeType, JSON.stringify({ type: item.nodeType }))
     e.dataTransfer.effectAllowed = 'move'
   }
 
@@ -188,7 +187,7 @@ export function Sidebar({
               <TooltipTrigger asChild>
                 <div
                   draggable
-                  onDragStart={(e) => handleDragStart(e, item.nodeType)}
+                  onDragStart={(e) => handleDragStart(e, item)}
                   className={cn(
                     'flex cursor-grab items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors active:cursor-grabbing',
                     'hover:bg-accent hover:text-foreground',
