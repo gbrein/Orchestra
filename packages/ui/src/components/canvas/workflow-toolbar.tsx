@@ -87,12 +87,12 @@ export function WorkflowToolbar({
   const [inputValue, setInputValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
-  if (!hasChain) return null
-
   // Focus input when it appears
   useEffect(() => {
     if (showInput) inputRef.current?.focus()
   }, [showInput])
+
+  if (!hasChain) return null
 
   const handleRunClick = () => {
     if (lastMessage) {
