@@ -606,7 +606,7 @@ export function SkillMarketplace({ open, onOpenChange }: SkillMarketplaceProps) 
   )
 
   const handleInstall = useCallback(async (skillId: string) => {
-    await apiPost('/api/skills/install', { skillId })
+    await apiPost('/api/skills/install', { name: skillId, source: 'marketplace' })
     setInstalledSkillIds((prev) => new Set([...Array.from(prev), skillId]))
   }, [])
 
