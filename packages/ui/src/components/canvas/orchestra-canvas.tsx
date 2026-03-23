@@ -311,8 +311,10 @@ function OrchestraCanvasInner({
   )
 
   return (
-    <div className="h-full w-full" onDragOver={handleDragOver} onDrop={handleDrop}>
+    <div className="h-full w-full">
       <ReactFlow
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
         nodes={nodes}
         edges={useMemo(() =>
           activeAgentIds && activeAgentIds.size > 0
