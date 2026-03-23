@@ -24,7 +24,8 @@
     "docker:all:detach": "docker compose up --build -d",
     "setup": "npm install && node scripts/setup-env.js && docker-compose up -d && npm run db:migrate && npm run db:seed",
     "test": "turbo test",
-    "test:coverage": "turbo test:coverage"
+    "test:coverage": "turbo test:coverage",
+    "screenshots": "npx tsx scripts/capture-screenshots.ts"
   },
   "devDependencies": {
     "playwright": "^1.58.2",
