@@ -72,15 +72,23 @@ export async function agentRoutes(app: FastifyInstance) {
       const raw = req.body as Record<string, unknown>
       const body = UpdateAgentSchema.parse(raw)
 
-      // Pass through additional known fields that Prisma accepts directly
-      const data: Record<string, unknown> = { ...body }
-      if ('status' in raw) data.status = raw.status
-      if ('canvasX' in raw) data.canvasX = raw.canvasX
-      if ('canvasY' in raw) data.canvasY = raw.canvasY
-      if ('loopEnabled' in raw) data.loopEnabled = raw.loopEnabled
-      if ('loopCriteria' in raw) data.loopCriteria = raw.loopCriteria ?? undefined
-      if ('maxIterations' in raw) data.maxIterations = raw.maxIterations
-      if ('teamEnabled' in raw) data.teamEnabled = raw.teamEnabled
+      // Validate and pass through additional known fields
+      const ExtraFieldsSchema = z.object({
+        status: z.enum(['idle', 'running', 'error', 'waiting_approval']).optional(),
+        canvasX: z.number().optional(),
+        canvasY: z.number().optional(),
+        loopEnabled: z.boolean().optional(),
+        loopCriteria: z.union([
+          z.object({ type: z.literal('max_iterations'), value: z.string().max(200) }),
+          z.object({ type: z.literal('regex'), value: z.string().max(500) }),
+          z.object({ type: z.literal('test_pass'), value: z.string().regex(/^[\w .\/\-]+$/).max(200) }),
+          z.object({ type: z.literal('manual'), value: z.string().max(200) }),
+        ]).nullable().optional(),
+        maxIterations: z.number().int().min(1).max(100).optional(),
+        teamEnabled: z.boolean().optional(),
+      }).partial()
+      const extra = ExtraFieldsSchema.parse(raw)
+      const data: Record<string, unknown> = { ...body, ...extra }
 
       const existing = await prisma.agent.findUnique({ where: { id: req.params.id } })
       if (!existing) throw new NotFoundError('Agent', req.params.id)

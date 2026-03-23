@@ -4,7 +4,7 @@
 
 import { EventEmitter } from 'events'
 import { randomUUID } from 'crypto'
-import { execSync } from 'child_process'
+import { spawnSync } from 'child_process'
 import { prisma } from '../lib/prisma'
 import { buildSpawnConfig } from './prompt-builder'
 import { ClaudeCodeSpawner } from './spawner'
@@ -298,8 +298,12 @@ function buildStoryMessage(story: StoryRow, progressJournal: string[]): string {
 
 function runCommand(command: string): boolean {
   try {
-    execSync(command, { stdio: 'ignore', timeout: 60_000 })
-    return true
+    // [SECURITY] Never use execSync (shell: true). Split command and spawn directly.
+    const parts = command.trim().split(/\s+/)
+    const [cmd, ...args] = parts
+    if (!cmd) return false
+    const result = spawnSync(cmd, args, { stdio: 'ignore', timeout: 60_000 })
+    return result.status === 0
   } catch {
     return false
   }
