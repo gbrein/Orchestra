@@ -183,29 +183,22 @@ export function Sidebar({
         )}
         <div className="flex flex-col gap-0.5">
           {DRAG_ITEMS.filter((item) => isVisible(item.minTier)).map((item) => (
-            <Tooltip key={item.label} delayDuration={0}>
-              <TooltipTrigger asChild>
-                <div
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, item)}
-                  className={cn(
-                    'flex cursor-grab items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors active:cursor-grabbing',
-                    'hover:bg-accent hover:text-foreground',
-                    collapsed && 'justify-center px-0',
-                  )}
-                  aria-label={`Drag ${item.label} to canvas`}
-                >
-                  <GripVertical className="h-3 w-3 shrink-0 opacity-40" aria-hidden />
-                  <item.icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                  {!collapsed && <span>{item.label}</span>}
-                </div>
-              </TooltipTrigger>
-              {collapsed && (
-                <TooltipContent side="right" className="text-xs">
-                  Drag: {item.label}
-                </TooltipContent>
+            <div
+              key={item.label}
+              draggable
+              onDragStart={(e) => handleDragStart(e, item)}
+              className={cn(
+                'flex cursor-grab items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors active:cursor-grabbing',
+                'hover:bg-accent hover:text-foreground',
+                collapsed && 'justify-center px-0',
               )}
-            </Tooltip>
+              title={collapsed ? `Drag: ${item.label}` : undefined}
+              aria-label={`Drag ${item.label} to canvas`}
+            >
+              <GripVertical className="h-3 w-3 shrink-0 opacity-40" aria-hidden />
+              <item.icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {!collapsed && <span>{item.label}</span>}
+            </div>
           ))}
         </div>
       </div>
