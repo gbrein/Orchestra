@@ -16,8 +16,6 @@ import { apiPost, apiDelete } from '@/lib/api'
 import { createResourceNode } from '@/lib/canvas-utils'
 import { OrchestraCanvas, type UndoRedoControls } from '@/components/canvas/orchestra-canvas'
 import { WorkflowToolbar } from '@/components/canvas/workflow-toolbar'
-import { MaestroOverlay } from '@/components/canvas/maestro-overlay'
-import { AdvisorFab } from '@/components/canvas/advisor-fab'
 import { MaestroDrawer } from '@/components/panels/maestro-drawer'
 import { WorkflowChat, type WorkflowLogEntry } from '@/components/panels/workflow-chat'
 import { hasAgentChain, buildChain } from '@/lib/chain-utils'
@@ -44,6 +42,8 @@ import { WorkspaceContextEditor } from '@/components/panels/workspace-context-ed
 import { WorkspacePlanEditor } from '@/components/panels/workspace-plan-editor'
 import { GitPanel } from '@/components/panels/git-panel'
 import { CostDashboard } from '@/components/panels/cost-dashboard'
+import { WorkflowReviewDialog } from '@/components/panels/workflow-review-dialog'
+import { SchedulesPanel } from '@/components/panels/schedules-panel'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { apiGet, apiPatch } from '@/lib/api'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
@@ -54,6 +54,7 @@ import { useAgentStatus } from '@/hooks/use-agent-status'
 import { useNotifications } from '@/hooks/use-notifications'
 import { injectMessagesIntoCache, type ChatMessage } from '@/hooks/use-agent-stream'
 import { useApprovals } from '@/hooks/use-approvals'
+import { usePanel } from '@/hooks/use-panel'
 import type { AgentNodeData } from '@/lib/canvas-utils'
 import type { AgentStatus, DiscussionTable, CreateDiscussionInput } from '@orchestra/shared'
 import type { OrchestraNotification } from '@/hooks/use-notifications'
@@ -74,50 +75,34 @@ interface SelectedAgent {
 export default function Home() {
   const [nodes, setNodes] = useState<Node[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
+  // ── Panel manager: one right-side panel at a time ──
+  const { panel, openPanel, closePanel, isOpen } = usePanel()
+
+  // ── Dialog states (modals overlay, don't compete with panels) ──
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
-  const [selectedAgent, setSelectedAgent] = useState<SelectedAgent | null>(null)
-  const [chatOpen, setChatOpen] = useState(false)
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [marketplaceOpen, setMarketplaceOpen] = useState(false)
+  const [reviewDialogOpen, setReviewDialogOpen] = useState(false)
   const [discussionWizardOpen, setDiscussionWizardOpen] = useState(false)
-  const [selectedDiscussion, setSelectedDiscussion] = useState<DiscussionTable | null>(null)
-  const [discussionPanelOpen, setDiscussionPanelOpen] = useState(false)
-
-  // New panel states
-  const [resourceBrowserOpen, setResourceBrowserOpen] = useState(false)
-  const [assistantsListOpen, setAssistantsListOpen] = useState(false)
-  const [safetyPanelOpen, setSafetyPanelOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [discussionsListOpen, setDiscussionsListOpen] = useState(false)
-  const [historyOpen, setHistoryOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<TopBarTab>('workspace')
-
-  // All discussions created during this session (local state)
-  const [discussions, setDiscussions] = useState<DiscussionTable[]>([])
-
-  // MCP management state
-  const [mcpManagementOpen, setMcpManagementOpen] = useState(false)
-  const [mcpServers, setMcpServers] = useState<McpServer[]>([])
-
-  // Chain config state
-  const [chainConfigOpen, setChainConfigOpen] = useState(false)
-
-  // PRD editor state
-  const [prdEditorOpen, setPrdEditorOpen] = useState(false)
-
   const [quickRunOpen, setQuickRunOpen] = useState(false)
-  const [activityOpen, setActivityOpen] = useState(false)
-  const [contextEditorOpen, setContextEditorOpen] = useState(false)
-  const [costDashboardOpen, setCostDashboardOpen] = useState(false)
-  const [planEditorOpen, setPlanEditorOpen] = useState(false)
-  const [gitPanelOpen, setGitPanelOpen] = useState(false)
+  const [createAgentOpen, setCreateAgentOpen] = useState(false)
+  const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false)
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+
+  // ── Non-panel state ──
+  const [selectedAgent, setSelectedAgent] = useState<SelectedAgent | null>(null)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [generatedWorkflow, setGeneratedWorkflow] = useState<import('@orchestra/shared').GeneratedWorkflowWithLayout | null>(null)
+  const [selectedDiscussion, setSelectedDiscussion] = useState<DiscussionTable | null>(null)
+  const [activeTab, setActiveTab] = useState<TopBarTab>('workspace')
+  const [discussions, setDiscussions] = useState<DiscussionTable[]>([])
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([])
   const [workflowRunning, setWorkflowRunning] = useState(false)
   const [workflowStep, setWorkflowStep] = useState<{ index: number; total: number; agentName: string } | null>(null)
   const [workflowChatOpen, setWorkflowChatOpen] = useState(false)
   const [workflowLog, setWorkflowLog] = useState<WorkflowLogEntry[]>([])
   const [workflowMode, setWorkflowMode] = useState<import('@orchestra/shared').AgentMode>('default')
   const [maestroEnabled, setMaestroEnabled] = useState(true)
-  const [maestroDrawerOpen, setMaestroDrawerOpen] = useState(false)
+  const [plannerEnabled, setPlannerEnabled] = useState(false)
+  const [plannerStatus, setPlannerStatus] = useState<'idle' | 'planning' | 'done'>('idle')
   const [maestroRigor, setMaestroRigor] = useState<1 | 2 | 3 | 4 | 5>(3)
   const [maestroCustomInstructions, setMaestroCustomInstructions] = useState('')
   const [maestroStatus, setMaestroStatus] = useState<'idle' | 'thinking' | 'decided'>('idle')
@@ -126,9 +111,6 @@ export default function Home() {
   const [advisorRunning, setAdvisorRunning] = useState(false)
   const [advisorModel, setAdvisorModel] = useState('claude-haiku-4-5-20251001')
   const [workspaceWorkingDir, setWorkspaceWorkingDir] = useState<string | null>(null)
-  const [createAgentOpen, setCreateAgentOpen] = useState(false)
-  const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false)
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
 
   // Favorites — fetched from DB
   const [favoriteAgents, setFavoriteAgents] = useState<Array<{ id: string; name: string; avatar?: string | null; status: string }>>([])
@@ -153,7 +135,7 @@ export default function Home() {
       name: fav.name,
       status: fav.status as AgentStatus,
     })
-    setChatOpen(true)
+    openPanel({ type: 'agent-chat', agentId: selectedAgent?.id ?? '' })
   }, [favoriteAgents])
 
   const [zoomLevel, setZoomLevel] = useState(100)
@@ -198,12 +180,8 @@ export default function Home() {
     )
   }, [])
 
-  const { sessionTokens, activeAgentIds } = useAgentStatus(handleAgentStatusChange)
+  const { sessionTokens, activeAgentIds, addTokens } = useAgentStatus(handleAgentStatusChange)
 
-  const handleSettingsClose = useCallback((open: boolean) => {
-    setSettingsOpen(open)
-    if (!open) refreshComplexity()
-  }, [refreshComplexity])
 
   const { connected, connecting, error: socketError } = useSocket()
 
@@ -417,35 +395,118 @@ export default function Home() {
     }, 200)
   }, [])
 
+  // Materialize a generated workflow onto the canvas (persist agents, create nodes/edges)
+  const materializeWorkflow = useCallback(async (workflow: import('@orchestra/shared').GeneratedWorkflowWithLayout) => {
+    // Persist each agent to DB (same pattern as handleTemplateSelected)
+    const persistedAgents = await Promise.all(
+      workflow.agents.map(async (agent) => {
+        try {
+          const saved = await apiPost<{ id: string }>('/api/agents', {
+            name: agent.name,
+            persona: agent.persona,
+            description: agent.description,
+            purpose: agent.purpose,
+            model: agent.model,
+            scope: [],
+            allowedTools: [],
+          })
+          return { ...agent, persistedId: saved.id }
+        } catch {
+          return { ...agent, persistedId: agent.tempId }
+        }
+      }),
+    )
+
+    // Build ID map: tempId → persisted DB id
+    const idMap = new Map<string, string>()
+    for (const agent of persistedAgents) {
+      idMap.set(agent.tempId, agent.persistedId)
+    }
+
+    // Assign skills to agents (best-effort, don't block on failure)
+    for (const agent of persistedAgents) {
+      for (const skillId of agent.suggestedSkills) {
+        apiPost(`/api/agents/${agent.persistedId}/skills/${skillId}`, {}).catch(() => {})
+      }
+    }
+
+    // Create React Flow nodes
+    const newNodes = persistedAgents.map((agent) => {
+      const node = createAgentNode(
+        agent.position,
+        {
+          name: agent.name,
+          description: agent.description,
+          status: 'idle' as const,
+          model: agent.model,
+          purpose: agent.purpose,
+        },
+      )
+      node.id = agent.persistedId
+      return node
+    })
+
+    // Create React Flow edges with remapped IDs
+    const newEdges: Edge[] = workflow.edges.map((edge) => ({
+      id: crypto.randomUUID(),
+      source: idMap.get(edge.from) ?? edge.from,
+      target: idMap.get(edge.to) ?? edge.to,
+      type: 'orchestra' as const,
+      data: { edgeType: 'flow' as const },
+    }))
+
+    setNodes(newNodes)
+    setEdges(newEdges)
+    setTimeout(() => {
+      viewRef.current?.fitView()
+      const z = viewRef.current?.getZoom()
+      if (z) setZoomLevel(Math.round(z * 100))
+    }, 200)
+  }, [])
+
   const handleDescribe = useCallback(async (description: string) => {
-    const name = description.length > 30 ? description.slice(0, 30) + '...' : description
+    setIsGenerating(true)
     try {
-      const saved = await apiPost<{ id: string }>('/api/agents', {
-        name,
-        persona: `You are a helpful assistant. The user described you as: "${description}". Follow these instructions carefully.`,
-        description,
-        purpose: 'general',
-        model: 'sonnet',
-        scope: [],
-        allowedTools: [],
-      })
-      const node = createAgentNode(
-        { x: 300, y: 250 },
-        { name, description, status: 'idle', model: 'sonnet', purpose: 'general' },
+      const workflow = await apiPost<import('@orchestra/shared').GeneratedWorkflowWithLayout>(
+        '/api/workflows/generate',
+        { description },
       )
-      node.id = saved.id
-      setNodes((prev) => [...prev, node])
+      // Open review dialog instead of materializing directly
+      setGeneratedWorkflow(workflow)
+      setReviewDialogOpen(true)
     } catch {
-      const node = createAgentNode(
-        { x: 300, y: 250 },
-        { name, description, status: 'idle', model: 'sonnet', purpose: 'general' },
-      )
-      setNodes((prev) => [...prev, node])
+      // Fallback: create a single agent (original behavior)
+      const name = description.length > 30 ? description.slice(0, 30) + '...' : description
+      try {
+        const saved = await apiPost<{ id: string }>('/api/agents', {
+          name,
+          persona: `You are a helpful assistant. The user described you as: "${description}". Follow these instructions carefully.`,
+          description,
+          purpose: 'general',
+          model: 'sonnet',
+          scope: [],
+          allowedTools: [],
+        })
+        const node = createAgentNode(
+          { x: 300, y: 250 },
+          { name, description, status: 'idle', model: 'sonnet', purpose: 'general' },
+        )
+        node.id = saved.id
+        setNodes((prev) => [...prev, node])
+      } catch {
+        const node = createAgentNode(
+          { x: 300, y: 250 },
+          { name, description, status: 'idle', model: 'sonnet', purpose: 'general' },
+        )
+        setNodes((prev) => [...prev, node])
+      }
+    } finally {
+      setIsGenerating(false)
     }
   }, [])
 
   const handleToggleMarketplace = useCallback(() => {
-    setMarketplaceOpen((prev) => !prev)
+    isOpen('skill-marketplace') ? closePanel() : openPanel({ type: 'skill-marketplace' })
   }, [])
 
   // Sidebar "Discussions" → open DiscussionWizard directly (no list needed from sidebar)
@@ -456,20 +517,20 @@ export default function Home() {
   // TopBar "Discussions" tab → open the list panel
   const handleTopBarDiscussionsClick = useCallback(() => {
     setActiveTab('discussions')
-    setDiscussionsListOpen(true)
-    setHistoryOpen(false)
+    openPanel({ type: 'discussions-list' })
+    /* history closed by panel switch */
   }, [])
 
   // TopBar "History" tab → open history panel
   const handleTopBarHistoryClick = useCallback(() => {
     setActiveTab('history')
-    setHistoryOpen(true)
-    setDiscussionsListOpen(false)
+    openPanel({ type: 'history' })
+    /* discussions closed by panel switch */
   }, [])
 
   // TopBar "Settings" gear → open settings panel
   const handleSettingsClick = useCallback(() => {
-    setSettingsOpen(true)
+    openPanel({ type: 'settings' })
   }, [])
 
   const handleSelectWorkspace = useCallback(async (id: string) => {
@@ -513,26 +574,26 @@ export default function Home() {
   }, [deleteWorkspace, workspaces, switchWorkspace])
 
   const handleResourcesClick = useCallback(() => {
-    setResourceBrowserOpen(true)
+    openPanel({ type: 'resource-browser' })
   }, [])
 
   const handleAssistantsClick = useCallback(() => {
-    setAssistantsListOpen(true)
+    openPanel({ type: 'assistants-list' })
   }, [])
 
   const handleSafetyClick = useCallback(() => {
-    setSafetyPanelOpen(true)
+    openPanel({ type: 'safety' })
   }, [])
 
   const handleSelectAssistant = useCallback((assistant: AssistantSummary) => {
-    setAssistantsListOpen(false)
+    closePanel()
     setSelectedAgent({
       id: assistant.id,
       name: assistant.name,
       status: assistant.status,
       model: assistant.model,
     })
-    setChatOpen(true)
+    openPanel({ type: 'agent-chat', agentId: selectedAgent?.id ?? '' })
   }, [])
 
   const handleDeleteAssistant = useCallback((id: string) => {
@@ -543,7 +604,7 @@ export default function Home() {
   }, [])
 
   const handleConnectionsClick = useCallback(() => {
-    setMcpManagementOpen(true)
+    openPanel({ type: 'mcp-management' })
   }, [])
 
   const handleDiscussionCreate = useCallback((config: CreateDiscussionInput) => {
@@ -561,12 +622,12 @@ export default function Home() {
     }
     setDiscussions((prev) => [...prev, provisional])
     setSelectedDiscussion(provisional)
-    setDiscussionPanelOpen(true)
+    openPanel({ type: 'discussion-panel', discussionId: selectedDiscussion?.id ?? '' })
   }, [])
 
   const handleSelectDiscussionFromList = useCallback((discussion: DiscussionTable) => {
     setSelectedDiscussion(discussion)
-    setDiscussionPanelOpen(true)
+    openPanel({ type: 'discussion-panel', discussionId: selectedDiscussion?.id ?? '' })
   }, [])
 
   const discussionAgents: DiscussionAgent[] = nodes
@@ -586,30 +647,14 @@ export default function Home() {
 
   const handleEscape = useCallback(() => {
     setShortcutsOpen(false)
-    setChatOpen(false)
-    setMarketplaceOpen(false)
     setDiscussionWizardOpen(false)
-    setDiscussionPanelOpen(false)
-    setMcpManagementOpen(false)
-    setChainConfigOpen(false)
-    setPrdEditorOpen(false)
-    setSettingsOpen(false)
-    setDiscussionsListOpen(false)
-    setHistoryOpen(false)
-    setAssistantsListOpen(false)
-    setSafetyPanelOpen(false)
-    setResourceBrowserOpen(false)
     setQuickRunOpen(false)
-    setActivityOpen(false)
-    setContextEditorOpen(false)
-    setCostDashboardOpen(false)
-    setPlanEditorOpen(false)
     setWorkflowChatOpen(false)
-    setGitPanelOpen(false)
+    closePanel()
     setNodes((prev) =>
       prev.map((n) => ({ ...n, selected: false })),
     )
-  }, [])
+  }, [closePanel])
 
   const handleCommand = useCallback((commandId: string) => {
     setCommandPaletteOpen(false)
@@ -623,6 +668,7 @@ export default function Home() {
       case 'template:content':
       case 'template:research':
         handleUseTemplate(); break
+      case 'nav:schedules': openPanel({ type: 'schedules' }); break
       default: break
     }
   }, [handleCreateAgent, handleToggleMarketplace, handleTopBarDiscussionsClick, handleToggleShortcuts, handleUseTemplate])
@@ -632,23 +678,23 @@ export default function Home() {
   }, [])
 
   const handleActivityClick = useCallback(() => {
-    setActivityOpen(true)
+    openPanel({ type: 'activity' })
   }, [])
 
   const handleContextEditorClick = useCallback(() => {
-    setContextEditorOpen(true)
+    openPanel({ type: 'context-editor' })
   }, [])
 
   const handleCostDashboardClick = useCallback(() => {
-    setCostDashboardOpen(true)
+    openPanel({ type: 'cost-dashboard' })
   }, [])
 
   const handlePlanClick = useCallback(() => {
-    setPlanEditorOpen(true)
+    openPanel({ type: 'plan-editor' })
   }, [])
 
   const handleGitClick = useCallback(() => {
-    setGitPanelOpen(true)
+    openPanel({ type: 'git' })
   }, [])
 
   const handleRunWorkflow = useCallback(async (message: string) => {
@@ -774,6 +820,8 @@ export default function Home() {
     setWorkflowRunning(true)
     setWorkflowStep({ index: 1, total: chain.length, agentName: chain[0].agentName })
 
+    if (plannerEnabled) setPlannerStatus('planning')
+
     sock.emit('chain:execute', {
       chainId,
       definition,
@@ -782,8 +830,9 @@ export default function Home() {
       maestro: maestroEnabled,
       maestroRigor,
       maestroCustomInstructions: maestroCustomInstructions || undefined,
+      planner: plannerEnabled,
     })
-  }, [nodes, edges, workflowMode, activeWorkspaceId, maestroEnabled, maestroRigor, maestroCustomInstructions])
+  }, [nodes, edges, workflowMode, activeWorkspaceId, maestroEnabled, maestroRigor, maestroCustomInstructions, plannerEnabled])
 
   const handleStopWorkflow = useCallback(() => {
     const chainId = workflowChainIdRef.current
@@ -823,9 +872,6 @@ export default function Home() {
     setWorkflowLog([])
   }, [])
 
-  const handleOpenWorkflowChat = useCallback(() => {
-    setWorkflowChatOpen(true)
-  }, [])
 
   const handleSaveWorkflowOutput = useCallback(async (content: string) => {
     // Collect all step outputs from the log
@@ -934,6 +980,8 @@ export default function Home() {
   const lastCompletedChainIdRef = useRef<string>('')
   const workflowStepsRef = useRef<ReturnType<typeof buildChain>>([])
   const workflowStepUsageRef = useRef<Map<number, import('@orchestra/shared').TokenUsage>>(new Map())
+  const addTokensRef = useRef(addTokens)
+  addTokensRef.current = addTokens
   const workflowStepMsgsRef = useRef<Map<number, ChatMessage[]>>(new Map())
   const workflowStepTextRef = useRef<Map<number, string>>(new Map())
 
@@ -952,6 +1000,21 @@ export default function Home() {
       const agentName = step?.agentName ?? `Agent ${data.stepIndex + 1}`
 
       setWorkflowStep({ index: data.stepIndex + 1, total: steps.length, agentName })
+
+      // Set chain visual state: active for current, pending for future
+      setNodes((prev) => prev.map((n) => {
+        if (n.type !== 'agent') return n
+        const nd = n.data as import('@/lib/canvas-utils').AgentNodeData
+        if (n.id === data.agentId) {
+          return { ...n, data: { ...nd, chainState: 'active' } }
+        }
+        // Mark not-yet-started agents as pending (if not already completed)
+        if (nd.chainState !== 'completed' && nd.chainState !== 'active') {
+          return { ...n, data: { ...nd, chainState: 'pending' } }
+        }
+        return n
+      }))
+
       setWorkflowLog((prev) => [
         ...prev,
         {
@@ -1059,10 +1122,13 @@ export default function Home() {
       })
     })
 
-    // Per-step usage — store on a ref so step_complete can include it
+    // Per-step usage — store on a ref so step_complete can include it,
+    // and also increment the global session token counter in the bottom bar.
     socket.on('chain:step_usage', (data: { chainId: string; stepIndex: number; agentId: string; usage: import('@orchestra/shared').TokenUsage }) => {
       if (data.chainId !== workflowChainIdRef.current) return
       workflowStepUsageRef.current.set(data.stepIndex, data.usage)
+      const total = (data.usage?.inputTokens ?? 0) + (data.usage?.outputTokens ?? 0)
+      addTokensRef.current(total)
     })
 
     socket.on('chain:step_complete', (data: { chainId: string; stepIndex: number; agentId: string; output: string }) => {
@@ -1071,6 +1137,12 @@ export default function Home() {
       const step = steps[data.stepIndex]
       const agentName = step?.agentName ?? `Agent ${data.stepIndex + 1}`
       const usage = workflowStepUsageRef.current.get(data.stepIndex)
+
+      // Mark agent as completed in chain visual state
+      setNodes((prev) => prev.map((n) => {
+        if (n.type !== 'agent' || n.id !== data.agentId) return n
+        return { ...n, data: { ...(n.data as import('@/lib/canvas-utils').AgentNodeData), chainState: 'completed' } }
+      }))
 
       setWorkflowLog((prev) => {
         // Mark the step_start entry as completed and remove duplicates
@@ -1124,6 +1196,19 @@ export default function Home() {
       setWorkflowStep(null)
       setMaestroStatus('idle')
       setMaestroLastAction(null)
+      setPlannerStatus('idle')
+
+      // Clear chain visual states after a delay (keep completed checkmarks visible briefly)
+      setTimeout(() => {
+        setNodes((prev) => prev.map((n) => {
+          if (n.type !== 'agent') return n
+          const nd = n.data as import('@/lib/canvas-utils').AgentNodeData
+          if (nd.chainState) {
+            return { ...n, data: { ...nd, chainState: undefined } }
+          }
+          return n
+        }))
+      }, 3000)
       lastCompletedChainIdRef.current = data.chainId
 
       // Calculate total usage across all steps
@@ -1224,6 +1309,54 @@ export default function Home() {
       ])
     })
 
+    // Planner events
+    socket.on('chain:planner_start', (data: { chainId: string }) => {
+      if (data.chainId !== workflowChainIdRef.current) return
+      setPlannerStatus('planning')
+      setWorkflowLog((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: 'system' as const,
+          content: 'Planner is analyzing the workflow...',
+          timestamp: new Date(),
+        },
+      ])
+    })
+
+    socket.on('chain:planner_result', (data: { chainId: string; plan: any }) => {
+      if (data.chainId !== workflowChainIdRef.current) return
+      setPlannerStatus('done')
+      const plan = data.plan
+      const changesCount = (plan?.agentChanges?.length ?? 0) + (plan?.edgeChanges?.length ?? 0)
+      const summary = changesCount > 0
+        ? `Planner suggests ${changesCount} change${changesCount > 1 ? 's' : ''}: ${plan.analysis}`
+        : `Planner approved the workflow: ${plan.analysis}`
+      setWorkflowLog((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: 'system' as const,
+          content: summary,
+          timestamp: new Date(),
+        },
+      ])
+    })
+
+    socket.on('chain:planner_error', (data: { chainId: string; error: string }) => {
+      if (data.chainId !== workflowChainIdRef.current) return
+      setPlannerStatus('idle')
+      setWorkflowLog((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: 'error' as const,
+          content: `Planner error: ${data.error}`,
+          timestamp: new Date(),
+        },
+      ])
+    })
+
     // Advisor events
     socket.on('advisor:analyzing', (data) => {
       if (data.chainId !== lastCompletedChainIdRef.current) return
@@ -1316,7 +1449,19 @@ export default function Home() {
   const handleNodeDoubleClick = useCallback(
     (nodeId: string, nodeType: string) => {
       if (nodeType === 'resource') {
-        setResourceBrowserOpen(true)
+        openPanel({ type: 'resource-browser' })
+        return
+      }
+      if (nodeType === 'skill') {
+        openPanel({ type: 'skill-marketplace' })
+        return
+      }
+      if (nodeType === 'policy') {
+        openPanel({ type: 'safety' })
+        return
+      }
+      if (nodeType === 'mcp') {
+        openPanel({ type: 'mcp-management' })
         return
       }
 
@@ -1334,13 +1479,13 @@ export default function Home() {
         status: data.status,
         model: data.model,
       })
-      setChatOpen(true)
+      openPanel({ type: 'agent-chat', agentId: selectedAgent?.id ?? '' })
     },
     [nodes],
   )
 
   const handleChatClose = useCallback(() => {
-    setChatOpen(false)
+    closePanel()
   }, [])
 
   // ── Approval dialog ────────────────────────────────────────────────────
@@ -1470,6 +1615,9 @@ export default function Home() {
           onActivityClick={handleActivityClick}
           onPlanClick={handlePlanClick}
           onGitClick={handleGitClick}
+          onSchedulesClick={() => openPanel({ type: 'schedules' })}
+          onSettingsClick={() => openPanel({ type: 'settings' })}
+          onCommandPalette={() => setCommandPaletteOpen(true)}
         />
         <main className="relative flex-1 overflow-hidden">
           <ErrorBoundary>
@@ -1481,23 +1629,22 @@ export default function Home() {
                 hasChain={hasAgentChain(nodes, edges)}
                 isRunning={workflowRunning}
                 currentStep={workflowStep}
-                onRun={handleOpenWorkflowChat}
+                onRun={(message) => { handleRunWorkflow(message); setWorkflowChatOpen(true) }}
                 onStop={handleStopWorkflow}
-                onOpenChat={handleOpenWorkflowChat}
-              />
-              <MaestroOverlay
-                visible={hasAgentChain(nodes, edges)}
-                enabled={maestroEnabled}
-                status={maestroStatus}
-                lastAction={maestroLastAction}
-                lastTargetAgent={maestroLastTargetAgent}
-                onClick={() => setMaestroDrawerOpen(true)}
-              />
-              <AdvisorFab
-                visible={hasAgentChain(nodes, edges)}
-                running={advisorRunning}
-                disabled={!lastCompletedChainIdRef.current || workflowRunning}
-                onClick={() => handleAdvisorRequest(advisorModel)}
+                chatOpen={workflowChatOpen}
+                onToggleChat={() => setWorkflowChatOpen((prev) => !prev)}
+                maestroEnabled={maestroEnabled}
+                maestroStatus={maestroStatus}
+                maestroLastAction={maestroLastAction}
+                maestroLastTargetAgent={maestroLastTargetAgent}
+                onMaestroToggle={() => setMaestroEnabled((prev) => !prev)}
+                advisorVisible={!!lastCompletedChainIdRef.current && !workflowRunning}
+                advisorRunning={advisorRunning}
+                onAdvisorClick={() => handleAdvisorRequest(advisorModel)}
+                plannerEnabled={plannerEnabled}
+                plannerStatus={plannerStatus}
+                onPlannerToggle={() => setPlannerEnabled((prev) => !prev)}
+                lastMessage={workflowLog.find((e) => e.type === 'user')?.content}
               />
               <OrchestraCanvas
                 initialNodes={nodes}
@@ -1520,6 +1667,7 @@ export default function Home() {
                 onDescribe={(desc) => { setShowHome(false); handleDescribe(desc) }}
                 onGoToWorkspace={goToWorkspace}
                 hasExistingCanvas={savedNodes.length > 0}
+                isGenerating={isGenerating}
               />
             )}
           </ErrorBoundary>
@@ -1546,8 +1694,8 @@ export default function Home() {
       {/* Assistants List */}
       <ErrorBoundary>
         <AssistantsList
-          open={assistantsListOpen}
-          onOpenChange={setAssistantsListOpen}
+          open={isOpen('assistants-list')}
+          onOpenChange={(open) => open ? openPanel({ type: 'assistants-list' }) : closePanel()}
           assistants={nodes
             .filter((n) => n.type === 'agent')
             .map((n) => {
@@ -1563,24 +1711,24 @@ export default function Home() {
       {/* Global Safety Panel */}
       <ErrorBoundary>
         <GlobalSafetyPanel
-          open={safetyPanelOpen}
-          onOpenChange={setSafetyPanelOpen}
+          open={isOpen('safety')}
+          onOpenChange={(open) => open ? openPanel({ type: 'safety' }) : closePanel()}
         />
       </ErrorBoundary>
 
       {/* Settings Panel */}
       <ErrorBoundary>
         <SettingsPanel
-          open={settingsOpen}
-          onOpenChange={handleSettingsClose}
+          open={isOpen('settings')}
+          onOpenChange={(open) => { if (!open) { closePanel(); refreshComplexity() } }}
         />
       </ErrorBoundary>
 
       {/* Resource Browser */}
       <ErrorBoundary>
         <ResourceBrowser
-          open={resourceBrowserOpen}
-          onOpenChange={setResourceBrowserOpen}
+          open={isOpen('resource-browser')}
+          onOpenChange={(open) => open ? openPanel({ type: 'resource-browser' }) : closePanel()}
           workspaceId={activeWorkspaceId || null}
         />
       </ErrorBoundary>
@@ -1588,15 +1736,15 @@ export default function Home() {
       {/* Discussions List */}
       <ErrorBoundary>
         <DiscussionsList
-          open={discussionsListOpen}
+          open={isOpen('discussions-list')}
           onOpenChange={(open) => {
-            setDiscussionsListOpen(open)
+            if (open) openPanel({ type: 'discussions-list' }); else closePanel()
             if (!open && activeTab === 'discussions') setActiveTab('workspace')
           }}
           discussions={discussions}
           onSelectDiscussion={handleSelectDiscussionFromList}
           onNewDiscussion={() => {
-            setDiscussionsListOpen(false)
+            /* discussions closed by panel switch */
             setDiscussionWizardOpen(true)
           }}
         />
@@ -1605,9 +1753,9 @@ export default function Home() {
       {/* History Panel */}
       <ErrorBoundary>
         <HistoryPanel
-          open={historyOpen}
+          open={isOpen('history')}
           onOpenChange={(open) => {
-            setHistoryOpen(open)
+            if (open) openPanel({ type: 'history' }); else closePanel()
             if (!open && activeTab === 'history') setActiveTab('workspace')
           }}
         />
@@ -1616,16 +1764,16 @@ export default function Home() {
       {/* Skill Marketplace */}
       <ErrorBoundary>
         <SkillMarketplace
-          open={marketplaceOpen}
-          onOpenChange={setMarketplaceOpen}
+          open={isOpen('skill-marketplace')}
+          onOpenChange={(open) => open ? openPanel({ type: 'skill-marketplace' }) : closePanel()}
         />
       </ErrorBoundary>
 
       {/* MCP Management */}
       <ErrorBoundary>
         <McpManagement
-          open={mcpManagementOpen}
-          onOpenChange={setMcpManagementOpen}
+          open={isOpen('mcp-management')}
+          onOpenChange={(open) => open ? openPanel({ type: 'mcp-management' }) : closePanel()}
           servers={mcpServers}
           onAdd={handleMcpAdd}
           onEdit={handleMcpEdit}
@@ -1636,8 +1784,8 @@ export default function Home() {
       {/* Chain Config */}
       <ErrorBoundary>
         <ChainConfig
-          open={chainConfigOpen}
-          onOpenChange={setChainConfigOpen}
+          open={isOpen('chain-config')}
+          onOpenChange={(open) => open ? openPanel({ type: 'chain-config' }) : closePanel()}
           nodes={nodes}
           edges={edges}
           onExecute={handleChainExecute}
@@ -1647,14 +1795,14 @@ export default function Home() {
       {/* PRD Editor */}
       <ErrorBoundary>
         <PrdEditor
-          open={prdEditorOpen}
-          onOpenChange={setPrdEditorOpen}
+          open={isOpen('prd-editor')}
+          onOpenChange={(open) => open ? openPanel({ type: 'prd-editor' }) : closePanel()}
           onStartPipeline={handlePrdStart}
         />
       </ErrorBoundary>
 
       {/* AgentChat */}
-      <Sheet open={chatOpen} onOpenChange={setChatOpen}>
+      <Sheet open={isOpen('agent-chat')} onOpenChange={(open) => open ? openPanel({ type: 'agent-chat', agentId: selectedAgent?.id ?? '' }) : closePanel()}>
         <SheetContent
           side="right"
           className="flex w-[420px] flex-col gap-0 p-0 sm:w-[500px] [&>button.absolute]:hidden"
@@ -1673,11 +1821,11 @@ export default function Home() {
                 agentModel={selectedAgent.model}
                 workspaceId={activeWorkspaceId || null}
                 onEdit={() => {
-                  setChatOpen(false)
-                  setDrawerOpen(true)
+                  closePanel()
+                  openPanel({ type: 'agent-drawer', agentId: selectedAgent?.id ?? '' })
                 }}
                 onManageResources={() => {
-                  setResourceBrowserOpen(true)
+                  openPanel({ type: 'resource-browser' })
                 }}
               />
             ) : (
@@ -1715,8 +1863,8 @@ export default function Home() {
             createdAt: '',
             updatedAt: '',
           } as any) : null}
-          open={drawerOpen}
-          onOpenChange={setDrawerOpen}
+          open={isOpen('agent-drawer')}
+          onOpenChange={(open) => open ? openPanel({ type: 'agent-drawer', agentId: selectedAgent?.id ?? '' }) : closePanel()}
           onSave={(updates) => {
             if (!selectedAgent) return
             setNodes((prev) => prev.map((n) =>
@@ -1724,11 +1872,11 @@ export default function Home() {
                 ? { ...n, data: { ...n.data, ...updates } }
                 : n,
             ))
-            setDrawerOpen(false)
+            closePanel()
           }}
           onOpenMarketplace={() => {
-            setDrawerOpen(false)
-            setMarketplaceOpen(true)
+            closePanel()
+            openPanel({ type: 'skill-marketplace' })
           }}
         />
       </ErrorBoundary>
@@ -1772,6 +1920,26 @@ export default function Home() {
         />
       </ErrorBoundary>
 
+      {/* Schedules Panel */}
+      <SchedulesPanel open={isOpen('schedules')} onOpenChange={(open) => open ? openPanel({ type: 'schedules' }) : closePanel()} />
+
+      {/* Workflow Review Dialog */}
+      <WorkflowReviewDialog
+        open={reviewDialogOpen}
+        onOpenChange={setReviewDialogOpen}
+        workflow={generatedWorkflow}
+        onConfirm={materializeWorkflow}
+        onSaveAsTemplate={async (wf) => {
+          try {
+            await apiPost('/api/saved-workflows', {
+              name: wf.name,
+              description: `Generated workflow with ${wf.agents.length} agents`,
+              workflow: wf,
+            })
+          } catch { /* best-effort */ }
+        }}
+      />
+
       {/* Command Palette */}
       <CommandPalette
         open={commandPaletteOpen}
@@ -1782,8 +1950,8 @@ export default function Home() {
       {/* Discussion Panel */}
       <ErrorBoundary>
         <DiscussionPanel
-          open={discussionPanelOpen}
-          onOpenChange={setDiscussionPanelOpen}
+          open={isOpen('discussion-panel')}
+          onOpenChange={(open) => open ? openPanel({ type: 'discussion-panel', discussionId: selectedDiscussion?.id ?? '' }) : closePanel()}
           discussion={selectedDiscussion}
         />
       </ErrorBoundary>
@@ -1810,12 +1978,12 @@ export default function Home() {
             status: d.status,
             model: d.model,
           })
-          setChatOpen(true)
+          openPanel({ type: 'agent-chat', agentId: selectedAgent?.id ?? '' })
         }}
       />
 
       {/* Activity Feed */}
-      <Sheet open={activityOpen} onOpenChange={setActivityOpen}>
+      <Sheet open={isOpen('activity')} onOpenChange={(open) => open ? openPanel({ type: 'activity' }) : closePanel()}>
         <SheetContent side="right" className="w-[400px] p-0 sm:w-[400px]">
           <SheetTitle className="border-b border-border px-4 py-3 text-sm font-semibold">
             Activity
@@ -1827,7 +1995,7 @@ export default function Home() {
       </Sheet>
 
       {/* Workspace Context Editor */}
-      <Sheet open={contextEditorOpen} onOpenChange={setContextEditorOpen}>
+      <Sheet open={isOpen('context-editor')} onOpenChange={(open) => open ? openPanel({ type: 'context-editor' }) : closePanel()}>
         <SheetContent side="right" className="w-[500px] p-0 sm:w-[500px]">
           <SheetTitle className="border-b border-border px-4 py-3 text-sm font-semibold">
             Workspace Context
@@ -1845,7 +2013,7 @@ export default function Home() {
       </Sheet>
 
       {/* Cost Dashboard */}
-      <Sheet open={costDashboardOpen} onOpenChange={setCostDashboardOpen}>
+      <Sheet open={isOpen('cost-dashboard')} onOpenChange={(open) => open ? openPanel({ type: 'cost-dashboard' }) : closePanel()}>
         <SheetContent side="right" className="w-[450px] p-0 sm:w-[450px]">
           <SheetTitle className="border-b border-border px-4 py-3 text-sm font-semibold">
             Cost Dashboard
@@ -1856,7 +2024,7 @@ export default function Home() {
         </SheetContent>
       </Sheet>
       {/* Maestro Drawer */}
-      <Sheet open={maestroDrawerOpen} onOpenChange={setMaestroDrawerOpen}>
+      <Sheet open={isOpen('maestro-drawer')} onOpenChange={(open) => open ? openPanel({ type: 'maestro-drawer' }) : closePanel()}>
         <SheetContent
           side="right"
           className="flex w-[380px] flex-col gap-0 p-0 sm:w-[400px] [&>button.absolute]:hidden"
@@ -1932,14 +2100,14 @@ export default function Home() {
                 model: step.model,
               })
               // Small delay for Sheet transition
-              setTimeout(() => setChatOpen(true), 200)
+              setTimeout(() => openPanel({ type: 'agent-chat', agentId: selectedAgent?.id ?? '' }), 200)
             }}
           />
         </SheetContent>
       </Sheet>
 
       {/* Workspace Plan Editor */}
-      <Sheet open={planEditorOpen} onOpenChange={setPlanEditorOpen}>
+      <Sheet open={isOpen('plan-editor')} onOpenChange={(open) => open ? openPanel({ type: 'plan-editor' }) : closePanel()}>
         <SheetContent side="right" className="w-[500px] p-0 sm:w-[500px]">
           <SheetTitle className="border-b border-border px-4 py-3 text-sm font-semibold">
             Workspace Plan
@@ -1957,7 +2125,7 @@ export default function Home() {
       </Sheet>
 
       {/* Git Panel */}
-      <GitPanel key={`git-${activeWorkspaceId}-${workspaceWorkingDir}`} open={gitPanelOpen} onOpenChange={setGitPanelOpen} workspaceId={activeWorkspaceId} />
+      <GitPanel key={`git-${activeWorkspaceId}-${workspaceWorkingDir}`} open={isOpen('git')} onOpenChange={(open) => open ? openPanel({ type: 'git' }) : closePanel()} workspaceId={activeWorkspaceId} />
     </div>
     </ComplexityContext.Provider>
   )

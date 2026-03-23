@@ -13,6 +13,8 @@ import type { ParticipantRole, DiscussionFormat } from '@orchestra/shared'
 import { LoopEngine } from '../engine/loop-engine'
 import { ChainExecutor } from '../engine/chain-executor'
 import { WorkflowAdvisor } from '../engine/advisor'
+import { Planner } from '../engine/planner'
+import type { PlannerAgent } from '../engine/planner'
 import { SKILL_CATALOG } from '../skills/catalog'
 import { recordActivity } from '../services/activity'
 import type { ChainDefinition as ChainDefinitionPayload } from '@orchestra/shared'
@@ -284,7 +286,7 @@ export function registerSocketHandlers(
       void handleAgentSetMode(socket, io, processManager, approvalManager, data)
     })
 
-    socket.on('chain:execute', (data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string; workspaceId?: string; maestro?: boolean }) => {
+    socket.on('chain:execute', (data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string; workspaceId?: string; maestro?: boolean; planner?: boolean; plannerCustomInstructions?: string }) => {
       void handleChainExecute(socket, io, data)
     })
 
@@ -927,7 +929,7 @@ function handleLoopApprove(
 async function handleChainExecute(
   socket: Socket<ClientToServerEvents, ServerToClientEvents>,
   io: Server<ClientToServerEvents, ServerToClientEvents>,
-  data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string; workspaceId?: string; maestro?: boolean; maestroRigor?: number; maestroCustomInstructions?: string },
+  data: { chainId?: string; definition: ChainDefinitionPayload; initialMessage: string; workspaceId?: string; maestro?: boolean; maestroRigor?: number; maestroCustomInstructions?: string; planner?: boolean; plannerCustomInstructions?: string },
 ): Promise<void> {
   const chainId = data.chainId ?? `chain-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
@@ -1103,6 +1105,26 @@ async function handleChainExecute(
         targetAgentName: '',
         message: decision.message,
       })
+
+      // Continuous planner: emit agent suggestions if any
+      if (decision.agentSuggestions && decision.agentSuggestions.length > 0) {
+        io.emit('chain:planner_result', {
+          chainId,
+          plan: {
+            analysis: `Maestro suggests ${decision.agentSuggestions.length} agent improvement(s) during execution`,
+            agentChanges: decision.agentSuggestions.map((s: any) => ({
+              agentId: '',
+              agentName: s.agentName,
+              changes: s.changeType === 'model' ? { model: s.suggestion } : { persona: s.suggestion },
+              reason: s.reason,
+            })),
+            edgeChanges: [],
+            addAgents: [],
+            removeAgents: [],
+            approved: true,
+          },
+        })
+      }
     })
 
     executor.on('step_maestro_redirect_request', (stepData) => {
@@ -1120,6 +1142,54 @@ async function handleChainExecute(
         requestId,
       })
     })
+
+    // ── Planner pre-execution analysis (if enabled) ──
+    if (data.planner) {
+      io.emit('chain:planner_start', { chainId })
+      try {
+        // Load agent metadata for planner context
+        const plannerAgents: PlannerAgent[] = await Promise.all(
+          data.definition.steps.map(async (step) => {
+            const agent = await prisma.agent.findUnique({
+              where: { id: step.agentId },
+              select: { id: true, name: true, persona: true, model: true },
+            })
+            const skills = await prisma.agentSkill.findMany({
+              where: { agentId: step.agentId, enabled: true },
+              select: { skillId: true },
+            })
+            return {
+              agentId: step.agentId,
+              name: agent?.name ?? `Agent ${step.agentId.slice(0, 8)}`,
+              persona: agent?.persona ?? '',
+              model: agent?.model ?? 'sonnet',
+              skills: skills.map((s) => s.skillId),
+            }
+          }),
+        )
+
+        const edges = data.definition.edges?.map((e) => ({
+          from: data.definition.steps[e.from]?.agentId ?? '',
+          to: data.definition.steps[e.to]?.agentId ?? '',
+        })) ?? []
+
+        const planner = new Planner()
+        const plan = await planner.analyze({
+          initialMessage: data.initialMessage,
+          agents: plannerAgents,
+          edges,
+          customInstructions: data.plannerCustomInstructions,
+        })
+
+        io.emit('chain:planner_result', { chainId, plan })
+      } catch (err) {
+        // Planner failure is non-fatal — continue execution
+        io.emit('chain:planner_error', {
+          chainId,
+          error: err instanceof Error ? err.message : 'Planner analysis failed',
+        })
+      }
+    }
 
     executor.execute(data.definition as ChainDefinition, data.initialMessage, {
       cwd,

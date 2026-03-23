@@ -3,9 +3,9 @@
 import { memo } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import Image from 'next/image'
-import { Circle, Loader2, Clock, AlertCircle } from 'lucide-react'
+import { Circle, Loader2, Clock, AlertCircle, CheckCircle2, Timer } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { getStatusColor, getStatusLabel, type AgentNodeData } from '@/lib/canvas-utils'
+import { getStatusColor, getStatusLabel, type AgentNodeData, type ChainNodeState } from '@/lib/canvas-utils'
 import { ModeBadge, MODE_BORDER_COLORS } from '@/components/panels/mode-toggle'
 import type { AgentStatus, AgentMode } from '@orchestra/shared'
 import { MODEL_TIERS } from '@orchestra/shared'
@@ -84,10 +84,15 @@ function ModelBadge({ model }: { model?: string }) {
 function AgentNodeComponent(props: NodeProps) {
   const data = props.data as AgentNodeData
   const { selected } = props
-  const { name, description, avatar, status, model, permissionMode } = data
+  const { name, description, avatar, status, model, permissionMode, chainState, hasSchedule } = data
   const statusColor = getStatusColor(status)
   const statusLabel = getStatusLabel(status)
   const modeBorderColor = MODE_BORDER_COLORS[(permissionMode ?? 'default') as AgentMode]
+
+  const isActive = chainState === 'active'
+  const isCompleted = chainState === 'completed'
+  const isPending = chainState === 'pending'
+  const isChainError = chainState === 'error'
 
   return (
     <>
@@ -101,16 +106,35 @@ function AgentNodeComponent(props: NodeProps) {
       {/* Card */}
       <div
         className={cn(
-          'relative w-[220px] overflow-hidden rounded-lg border bg-card text-card-foreground shadow-md transition-shadow',
+          'relative w-[220px] overflow-hidden rounded-lg border bg-card text-card-foreground shadow-md transition-all duration-300',
           selected && 'ring-2 ring-primary ring-offset-1 ring-offset-background',
+          // Chain execution visual states
+          isActive && 'ring-2 ring-blue-400/70 shadow-[0_0_20px_rgba(96,165,250,0.3)]',
+          isCompleted && 'border-green-500/40',
+          isPending && 'opacity-50',
+          isChainError && 'ring-2 ring-red-400/70',
         )}
         style={modeBorderColor ? { borderLeftWidth: 3, borderLeftColor: modeBorderColor } : undefined}
         role="button"
         aria-label={`Agent: ${name}, status: ${statusLabel}`}
         tabIndex={0}
       >
+        {/* Schedule badge — top right corner */}
+        {hasSchedule && (
+          <div
+            className="absolute -right-1.5 -top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full border bg-card shadow-sm"
+            title="Has scheduled task"
+          >
+            <Timer className="h-3 w-3 text-amber-400" aria-hidden />
+          </div>
+        )}
+
         {/* Status bar — top accent strip */}
-        <div className="h-1 w-full" style={{ backgroundColor: statusColor }} aria-hidden />
+        <div
+          className={cn('h-1 w-full transition-colors', isActive && 'animate-pulse')}
+          style={{ backgroundColor: isCompleted ? 'hsl(142, 71%, 45%)' : statusColor }}
+          aria-hidden
+        />
 
         {/* Card body */}
         <div className="p-3">
@@ -132,8 +156,17 @@ function AgentNodeComponent(props: NodeProps) {
               <ModeBadge mode={(permissionMode ?? 'default') as AgentMode} />
             </div>
             <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <StatusIcon status={status} />
-              <span>{statusLabel}</span>
+              {isCompleted ? (
+                <>
+                  <CheckCircle2 className="h-3 w-3 text-green-400" aria-hidden />
+                  <span className="text-green-400">Done</span>
+                </>
+              ) : (
+                <>
+                  <StatusIcon status={status} />
+                  <span>{statusLabel}</span>
+                </>
+              )}
             </div>
           </div>
         </div>

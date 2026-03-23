@@ -127,6 +127,34 @@ export async function gitRoutes(app: FastifyInstance) {
     }
   })
 
+  // Checkout / switch branch
+  app.post('/api/git/checkout', async (req, reply) => {
+    try {
+      const { branch, workspaceId } = z.object({
+        branch: z.string().min(1).max(200),
+        workspaceId: z.string().uuid().optional(),
+      }).parse(req.body)
+      const cwd = await resolveGitCwd(workspaceId)
+      await git.checkoutBranch(branch, cwd)
+      const status = await git.getStatus(cwd)
+      sendSuccess(reply, status)
+    } catch (error) {
+      sendError(reply, error)
+    }
+  })
+
+  // Get remote origin URL
+  app.get('/api/git/remote', async (req, reply) => {
+    try {
+      const { workspaceId } = WorkspaceQuerySchema.parse(req.query)
+      const cwd = await resolveGitCwd(workspaceId)
+      const url = await git.getRemoteUrl(cwd)
+      sendSuccess(reply, { url })
+    } catch (error) {
+      sendError(reply, error)
+    }
+  })
+
   app.post('/api/git/push', async (req, reply) => {
     try {
       const { workspaceId } = PushSchema.parse(req.body)

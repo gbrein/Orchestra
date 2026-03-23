@@ -190,6 +190,27 @@ export async function push(cwd?: string): Promise<GitPushResult> {
   }
 }
 
+// ─── Checkout / Switch Branch ────────────────────────────────────────────────
+
+export async function checkoutBranch(branch: string, cwd?: string): Promise<void> {
+  // Validate branch name — no special chars that could be abused
+  if (!/^[\w./-]+$/.test(branch)) {
+    throw new ValidationError(`Invalid branch name: "${branch}"`)
+  }
+  await runGit(['switch', branch], cwd)
+}
+
+// ─── Remote URL ─────────────────────────────────────────────────────────────
+
+export async function getRemoteUrl(cwd?: string): Promise<string | null> {
+  try {
+    const output = await runGit(['config', '--get', 'remote.origin.url'], cwd)
+    return output.trim() || null
+  } catch {
+    return null
+  }
+}
+
 // ─── Diff ───────────────────────────────────────────────────────────────────
 
 export async function getDiff(file?: string, cwd?: string): Promise<string> {

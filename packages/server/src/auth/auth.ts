@@ -7,7 +7,11 @@ const UI_ORIGIN = process.env.UI_ORIGIN ?? 'http://localhost:3000'
 export const auth = betterAuth({
   baseURL: process.env.BETTER_AUTH_URL ?? 'http://localhost:3001',
   basePath: '/api/auth',
-  secret: process.env.BETTER_AUTH_SECRET ?? 'orchestra-dev-secret-change-in-production',
+  secret: (() => {
+    const secret = process.env.BETTER_AUTH_SECRET
+    if (!secret) throw new Error('BETTER_AUTH_SECRET environment variable is required. Run `npm run setup` to generate one.')
+    return secret
+  })(),
   appName: 'Orchestra',
 
   database: prismaAdapter(prisma, {

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Orchestra is a local-first visual orchestration platform for Claude Code agents. Drag-and-drop canvas (React Flow) for creating agents, connecting skills, defining security policies, and running multi-agent discussions.
+Orchestra is a local-first visual orchestration platform for Claude Code agents. Drag-and-drop canvas (React Flow) for creating agents, connecting skills, defining security policies, and running multi-agent workflows.
 
 ## Tech Stack
 
@@ -66,7 +66,7 @@ orchestra/
 │   │   └── src/
 │   │       ├── index.ts         # Server entry
 │   │       ├── routes/          # Fastify API routes
-│   │       ├── engine/          # Spawner, ProcessManager, PolicyResolver
+│   │       ├── engine/          # Spawner, ProcessManager, Planner, Maestro, Advisor, Scheduler
 │   │       ├── discussion/      # Moderator engine, TurnRouter
 │   │       ├── auth/            # Better Auth config + middleware
 │   │       ├── services/        # Activity recording
@@ -79,6 +79,22 @@ orchestra/
 └── package.json         # Workspace root
 ```
 
+## Key Engine Components
+
+- **WorkflowGenerator** (`engine/workflow-generator.ts`) — AI generates multi-agent workflows from task descriptions
+- **Planner** (`engine/planner.ts`) — Pre-execution analysis with agent change suggestions
+- **Maestro** (`engine/maestro.ts`) — Mid-execution orchestrator with continuous planning
+- **Advisor** (`engine/advisor.ts`) — Post-run analysis with improvement suggestions
+- **Scheduler** (`engine/scheduler.ts`) — Cron-based recurring task execution
+- **ChainExecutor** (`engine/chain-executor.ts`) — DAG execution with parallel branches
+
+## UI Architecture
+
+- **Panel manager** (`hooks/use-panel.ts`) — Discriminated union controls which right-side panel is open (mutual exclusivity)
+- **Unified toolbar** (`canvas/workflow-toolbar.tsx`) — Single bar with Run/Stop, Maestro, Planner, Advisor, Chat
+- **Sidebar** (`shell/sidebar.tsx`) — Separated into drag-to-canvas palette and browse navigation
+- **Canvas feedback** (`canvas-utils.ts: ChainNodeState`) — Agents show pending/active/completed/error during execution
+
 ## Conventions
 
 - Follow immutable data patterns (readonly types, spread operator, no mutation)
@@ -88,6 +104,8 @@ orchestra/
 - Use consistent API response envelope: `{ success, data?, error?, meta? }`
 - User-facing terminology from `@orchestra/shared/terminology` (Agent→Assistant, etc.)
 - Never use `shell: true` in child_process.spawn (security)
+- Never use `execSync` — always `spawnSync` with args array
 - Spawn Claude Code with `--output-format stream-json` for structured events
 - Policy resolution: most restrictive wins (min for numbers, union for blocked lists)
 - Dark mode as default theme
+- `BETTER_AUTH_SECRET` must be set — no hardcoded fallback

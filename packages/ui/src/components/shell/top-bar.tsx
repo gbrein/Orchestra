@@ -86,68 +86,8 @@ export function TopBar({
         />
       </div>
 
-      {/* Center: View tabs */}
-      <nav className="flex items-center gap-1" aria-label="Main navigation">
-        <Button
-          variant="ghost"
-          size="sm"
-          className={cn(
-            'h-7 text-xs',
-            activeTab === 'workspace' && !onHomeClick
-              ? 'font-medium text-foreground'
-              : 'text-muted-foreground',
-          )}
-          onClick={onHomeClick}
-        >
-          Home
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={cn(
-            'h-7 text-xs',
-            activeTab === 'workspace'
-              ? 'font-medium text-foreground'
-              : 'text-muted-foreground',
-          )}
-          aria-current={activeTab === 'workspace' ? 'page' : undefined}
-          onClick={onWorkspaceClick}
-        >
-          Workspace
-        </Button>
-        {!isSimple && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn(
-              'h-7 text-xs',
-              activeTab === 'discussions'
-                ? 'font-medium text-foreground'
-                : 'text-muted-foreground',
-            )}
-            aria-current={activeTab === 'discussions' ? 'page' : undefined}
-            onClick={onDiscussionsClick}
-          >
-            Discussions
-          </Button>
-        )}
-        {!isSimple && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn(
-              'h-7 text-xs',
-              activeTab === 'history'
-                ? 'font-medium text-foreground'
-                : 'text-muted-foreground',
-            )}
-            aria-current={activeTab === 'history' ? 'page' : undefined}
-            onClick={onHistoryClick}
-          >
-            History
-          </Button>
-        )}
-      </nav>
+      {/* Center: spacer (tabs removed — Discussions/History accessible via sidebar) */}
+      <div />
 
       {/* Right: Notifications + Settings */}
       <div className="flex items-center gap-2">

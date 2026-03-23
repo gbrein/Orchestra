@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useCallback } from 'react'
+import { apiPost, apiDelete } from '@/lib/api'
 import {
   Search,
   Check,
@@ -481,18 +482,7 @@ function ImportTab({ onImportSuccess }: { readonly onImportSuccess: (skill: Skil
     setMessage(null)
 
     try {
-      const res = await fetch('/api/skills/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gitUrl: url }),
-      })
-
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string }
-        throw new Error(data.error ?? `Server error ${res.status}`)
-      }
-
-      const skill = (await res.json()) as Skill
+      const skill = await apiPost<Skill>('/api/skills/import', { gitUrl: url })
       setStatus('success')
       setMessage(`"${skill.name}" imported successfully.`)
       setGitUrl('')
@@ -616,24 +606,12 @@ export function SkillMarketplace({ open, onOpenChange }: SkillMarketplaceProps) 
   )
 
   const handleInstall = useCallback(async (skillId: string) => {
-    const res = await fetch('/api/skills/install', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ skillId }),
-    })
-    if (!res.ok) {
-      const data = (await res.json().catch(() => ({}))) as { error?: string }
-      throw new Error(data.error ?? `Server error ${res.status}`)
-    }
+    await apiPost('/api/skills/install', { name: skillId, source: 'marketplace' })
     setInstalledSkillIds((prev) => new Set([...Array.from(prev), skillId]))
   }, [])
 
   const handleUninstall = useCallback(async (skillId: string) => {
-    const res = await fetch(`/api/skills/${skillId}`, { method: 'DELETE' })
-    if (!res.ok) {
-      const data = (await res.json().catch(() => ({}))) as { error?: string }
-      throw new Error(data.error ?? `Server error ${res.status}`)
-    }
+    await apiDelete(`/api/skills/${skillId}`)
     setInstalledSkillIds((prev) => {
       const next = new Set(Array.from(prev))
       next.delete(skillId)

@@ -33,7 +33,7 @@ export interface ClientToServerEvents {
   'loop:stop': (data: { agentId: string }) => void
   'loop:approve': (data: { agentId: string; loopId: string; approved: boolean }) => void
   'agent:set_mode': (data: { agentId: string; mode: AgentMode }) => void
-  'chain:execute': (data: { chainId?: string; definition: ChainDefinition; initialMessage: string; workspaceId?: string; maestro?: boolean; maestroRigor?: number; maestroCustomInstructions?: string }) => void
+  'chain:execute': (data: { chainId?: string; definition: ChainDefinition; initialMessage: string; workspaceId?: string; maestro?: boolean; maestroRigor?: number; maestroCustomInstructions?: string; planner?: boolean; plannerCustomInstructions?: string }) => void
   'chain:stop': (data: { chainId: string }) => void
   'chain:maestro_redirect_response': (data: { chainId: string; requestId: string; approved: boolean }) => void
   'advisor:analyze': (data: { chainId: string; model?: string }) => void
@@ -66,6 +66,9 @@ export interface ServerToClientEvents {
   'advisor:analyzing': (data: { chainId: string }) => void
   'advisor:result': (data: { chainId: string; result: { overallAssessment: string; objectiveMet: boolean; suggestions: Array<{ id: string; category: string; title: string; description: string; actionType?: string | null; actionPayload?: { agentId?: string; agentName?: string; skillName?: string; newPersona?: string }; severity: string }> } }) => void
   'advisor:error': (data: { chainId: string; error: string }) => void
+  'chain:planner_start': (data: { chainId: string }) => void
+  'chain:planner_result': (data: { chainId: string; plan: unknown }) => void
+  'chain:planner_error': (data: { chainId: string; error: string }) => void
   'notification': (data: { id: string; level: 'info' | 'action_required' | 'critical' | 'error'; title: string; agentId?: string; actions?: string[] }) => void
   'canvas:updated': (data: { workspaceId: string }) => void
 }
