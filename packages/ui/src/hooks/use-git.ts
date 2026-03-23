@@ -8,6 +8,7 @@ export interface UseGitReturn {
   status: GitStatusResult | null
   log: GitLogEntry[]
   branches: GitBranchEntry[]
+  remoteUrl: string | null
   loading: boolean
   error: string | null
   refreshStatus: () => Promise<void>
@@ -17,6 +18,7 @@ export interface UseGitReturn {
   unstageFiles: (paths: string[]) => Promise<void>
   commit: (message: string) => Promise<void>
   push: () => Promise<GitPushResult>
+  checkoutBranch: (branch: string) => Promise<void>
 }
 
 function wsQuery(workspaceId?: string | null): string {
@@ -27,6 +29,7 @@ export function useGit(active: boolean, workspaceId?: string | null): UseGitRetu
   const [status, setStatus] = useState<GitStatusResult | null>(null)
   const [log, setLog] = useState<GitLogEntry[]>([])
   const [branches, setBranches] = useState<GitBranchEntry[]>([])
+  const [remoteUrl, setRemoteUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -71,8 +74,14 @@ export function useGit(active: boolean, workspaceId?: string | null): UseGitRetu
     }
 
     setLoading(true)
-    Promise.all([refreshStatus(), refreshLog(), refreshBranches()])
-      .finally(() => setLoading(false))
+    Promise.all([
+      refreshStatus(),
+      refreshLog(),
+      refreshBranches(),
+      apiGet<{ url: string | null }>(`/api/git/remote${wsQuery(workspaceId)}`)
+        .then((data) => setRemoteUrl(data.url))
+        .catch(() => setRemoteUrl(null)),
+    ]).finally(() => setLoading(false))
 
     intervalRef.current = setInterval(() => {
       void refreshStatus()
@@ -132,9 +141,19 @@ export function useGit(active: boolean, workspaceId?: string | null): UseGitRetu
     }
   }, [workspaceId, refreshStatus])
 
+  const checkoutBranch = useCallback(async (branch: string) => {
+    setError(null)
+    try {
+      await apiPost('/api/git/checkout', { branch, workspaceId: workspaceId ?? undefined })
+      await Promise.all([refreshStatus(), refreshBranches(), refreshLog()])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to switch branch')
+    }
+  }, [workspaceId, refreshStatus, refreshBranches, refreshLog])
+
   return {
-    status, log, branches, loading, error,
+    status, log, branches, remoteUrl, loading, error,
     refreshStatus, refreshLog, refreshBranches,
-    stageFiles, unstageFiles, commit, push,
+    stageFiles, unstageFiles, commit, push, checkoutBranch,
   }
 }

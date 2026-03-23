@@ -62,10 +62,10 @@ export function GitPanel({ open, onOpenChange, workspaceId }: GitPanelProps) {
   }, [open, workspaceId])
 
   const {
-    status, log, branches,
+    status, log, branches, remoteUrl,
     loading, error,
     refreshStatus, refreshLog, refreshBranches,
-    stageFiles, unstageFiles, commit, push,
+    stageFiles, unstageFiles, commit, push, checkoutBranch,
   } = useGit(open, workspaceId)
 
   const stagedCount = status?.files.filter((f) => f.staged).length ?? 0
@@ -152,17 +152,22 @@ export function GitPanel({ open, onOpenChange, workspaceId }: GitPanelProps) {
           </div>
         </header>
 
-        {/* Target directory */}
-        <div className="shrink-0 border-b border-border px-4 py-1.5">
-          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-            <FolderOpen className="h-3 w-3 shrink-0 text-amber-400" aria-hidden />
-            <span className="truncate font-mono">
+        {/* Repository info */}
+        <div className="shrink-0 border-b border-border px-4 py-2">
+          <div className="flex items-center gap-1.5 text-xs">
+            <FolderOpen className="h-3.5 w-3.5 shrink-0 text-amber-400" aria-hidden />
+            <span className="truncate font-mono font-medium">
               {targetDir || 'Server directory (default)'}
             </span>
           </div>
+          {remoteUrl && (
+            <p className="mt-1 truncate text-[10px] text-muted-foreground">
+              {remoteUrl.replace(/\.git$/, '').replace(/^https?:\/\//, '').replace(/^git@/, '')}
+            </p>
+          )}
           {!targetDir && (
-            <p className="mt-0.5 text-[9px] text-muted-foreground/60">
-              Configure a project folder in the Workflow Chat to target a specific repository.
+            <p className="mt-1 text-[10px] text-muted-foreground/60">
+              Configure a project folder in workspace settings to target a specific repository.
             </p>
           )}
         </div>
@@ -232,7 +237,7 @@ export function GitPanel({ open, onOpenChange, workspaceId }: GitPanelProps) {
                 />
               )}
               {activeTab === 'log' && <GitLogTab entries={log} />}
-              {activeTab === 'branches' && <GitBranchesTab branches={branches} />}
+              {activeTab === 'branches' && <GitBranchesTab branches={branches} onCheckout={checkoutBranch} />}
             </>
           )}
         </div>
