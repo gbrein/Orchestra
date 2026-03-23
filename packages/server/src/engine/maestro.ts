@@ -33,12 +33,21 @@ export interface MaestroContext {
 
 export type MaestroAction = 'continue' | 'redirect' | 'conclude'
 
+export interface MaestroAgentSuggestion {
+  readonly agentName: string
+  readonly changeType: 'persona' | 'model'
+  readonly suggestion: string
+  readonly reason: string
+}
+
 export interface MaestroDecision {
   readonly action: MaestroAction
   readonly targetStepIndex: number
   readonly message: string
   readonly reasoning: string
   readonly learning: string | null
+  /** Continuous planner: optional mid-run suggestions for agent changes */
+  readonly agentSuggestions?: readonly MaestroAgentSuggestion[]
 }
 
 // ─── Maestro Class ──────────────────────────────────────────────────────────
@@ -198,14 +207,22 @@ ${buildRigorInstructions(context.rigor ?? 3)}
 - Pass the truncated output as-is to the next agent — it can still work with partial results
 - Only redirect if the output is fundamentally wrong or missing critical parts, NOT because it was cut short
 
-${context.customInstructions ? `## Custom Instructions from User\n${context.customInstructions}\n` : ''}## Response Format
+${context.customInstructions ? `## Custom Instructions from User\n${context.customInstructions}\n` : ''}## Agent Improvement Suggestions (Continuous Planner)
+If you notice an agent would benefit from a persona tweak or model change for future steps, include "agentSuggestions". This is OPTIONAL — only include when you have a concrete improvement. Examples:
+- Agent persona is too vague for the task → suggest a more specific persona
+- Agent uses haiku but the task needs deeper reasoning → suggest model upgrade to sonnet/opus
+
+## Response Format
 You MUST respond with ONLY a JSON object (no markdown, no code fences):
 {
   "action": "continue" | "redirect" | "conclude",
   "targetStepIndex": <number — next step index for continue, same step for redirect>,
   "message": "<contextualized message for the next/retried agent>",
   "reasoning": "<explanation of your decision for the user>",
-  "learning": "<pattern observed, or null if none>"
+  "learning": "<pattern observed, or null if none>",
+  "agentSuggestions": [
+    { "agentName": "<name>", "changeType": "persona" | "model", "suggestion": "<new value>", "reason": "<why>" }
+  ]
 }`
 }
 
@@ -273,7 +290,23 @@ function parseMaestroResponse(raw: string, context: MaestroContext): MaestroDeci
     const reasoning = typeof parsed.reasoning === 'string' ? parsed.reasoning : 'No reasoning provided.'
     const learning = typeof parsed.learning === 'string' ? parsed.learning : null
 
-    return { action, targetStepIndex, message, reasoning, learning }
+    // Parse optional agent suggestions (continuous planner)
+    const rawSuggestions = Array.isArray(parsed.agentSuggestions) ? parsed.agentSuggestions : []
+    const agentSuggestions: MaestroAgentSuggestion[] = rawSuggestions
+      .slice(0, 3)
+      .filter((s: unknown): s is Record<string, unknown> => typeof s === 'object' && s !== null)
+      .map((s) => ({
+        agentName: typeof s.agentName === 'string' ? s.agentName : '',
+        changeType: (s.changeType === 'persona' || s.changeType === 'model' ? s.changeType : 'persona') as 'persona' | 'model',
+        suggestion: typeof s.suggestion === 'string' ? s.suggestion : '',
+        reason: typeof s.reason === 'string' ? s.reason : '',
+      }))
+      .filter((s) => s.agentName && s.suggestion)
+
+    return {
+      action, targetStepIndex, message, reasoning, learning,
+      agentSuggestions: agentSuggestions.length > 0 ? agentSuggestions : undefined,
+    }
   } catch {
     return fallbackDecision(context)
   }

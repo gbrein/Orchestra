@@ -21,6 +21,10 @@ import { analyticsRoutes } from './routes/analytics'
 import { authRoutes } from './routes/auth'
 import { gitRoutes } from './routes/git'
 import { filesystemRoutes } from './routes/filesystem'
+import { workflowGeneratorRoutes } from './routes/workflow-generator'
+import { savedWorkflowRoutes } from './routes/saved-workflows'
+import { scheduleRoutes } from './routes/schedules'
+import { Scheduler } from './engine/scheduler'
 import { registerAuthMiddleware } from './auth/middleware'
 import { auth } from './auth/auth'
 import { fromNodeHeaders } from 'better-auth/node'
@@ -98,6 +102,8 @@ async function main() {
   await app.register(analyticsRoutes)
   await app.register(gitRoutes)
   await app.register(filesystemRoutes)
+  await app.register(workflowGeneratorRoutes)
+  await app.register(savedWorkflowRoutes)
 
   // Health check
   app.get('/api/health', async () => ({
@@ -148,6 +154,11 @@ async function main() {
     })
   })
 
+  // Scheduler — cron-based recurring task execution
+  const scheduler = new Scheduler({ io })
+  await app.register(scheduleRoutes(scheduler))
+  void scheduler.start().catch((err) => app.log.error(err, 'Failed to start scheduler'))
+
   // Register Claude Code engine socket handlers
   registerSocketHandlers(io, processManager, approvalManager)
 
@@ -174,6 +185,7 @@ async function main() {
   const shutdown = async () => {
     app.log.info('Shutting down gracefully...')
     clearInterval(approvalWatchdog)
+    scheduler.stop()
     processManager.stopAll()
 
     for (const [, engine] of activeLoops) engine.stop()
