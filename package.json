@@ -18,8 +18,10 @@
     "db:migrate": "npx prisma migrate dev --schema=packages/server/prisma/schema.prisma",
     "db:seed": "npx prisma db seed --schema=packages/server/prisma/schema.prisma",
     "db:studio": "npx prisma studio --schema=packages/server/prisma/schema.prisma",
-    "docker:up": "docker-compose up -d",
+    "docker:up": "docker-compose up -d postgres",
     "docker:down": "docker-compose down",
+    "docker:all": "docker compose up --build",
+    "docker:all:detach": "docker compose up --build -d",
     "setup": "npm install && node scripts/setup-env.js && docker-compose up -d && npm run db:migrate && npm run db:seed",
     "test": "turbo test",
     "test:coverage": "turbo test:coverage"

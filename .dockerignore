@@ -1,0 +1,16 @@
+node_modules
+.next
+dist
+out
+build
+.turbo
+.git
+.claude
+.orchestra
+coverage
+.nyc_output
+*.md
+!README.md
+.env
+.env.local
+.env.*.local

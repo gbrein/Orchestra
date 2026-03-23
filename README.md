@@ -8,7 +8,9 @@ Build AI agent teams visually. Describe what you need, and Orchestra creates a t
 
 ---
 
-## Get Started in 3 Steps
+## Get Started
+
+### Option A: Local Development
 
 ```bash
 git clone https://github.com/gbrein/Orchestra.git
@@ -18,6 +20,19 @@ npm run dev      # opens at http://localhost:3000
 ```
 
 > **You need:** Node.js 18+, Docker Desktop, and [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated.
+
+### Option B: Full Docker (everything in containers)
+
+```bash
+git clone https://github.com/gbrein/Orchestra.git
+cd Orchestra
+cp .env.example .env   # edit .env to set BETTER_AUTH_SECRET and ANTHROPIC_API_KEY
+docker compose up      # builds and starts all services
+```
+
+This runs PostgreSQL, the Fastify backend, and the Next.js frontend in containers. Open [http://localhost:3000](http://localhost:3000).
+
+> **Note:** The server container installs Claude Code CLI. Set `ANTHROPIC_API_KEY` in your `.env` for agent execution to work.
 
 On first visit, create a local account (email/password). Then just describe what you want to build.
 
