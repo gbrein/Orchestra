@@ -120,7 +120,7 @@ export function Sidebar({
 
   function handleDragStart(e: React.DragEvent<HTMLElement>, item: DragItem) {
     e.dataTransfer.setData(item.mimeType, JSON.stringify({ type: item.nodeType }))
-    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.effectAllowed = 'all'
   }
 
   const resolveAction = (action: string) => {

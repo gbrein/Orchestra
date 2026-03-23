@@ -211,7 +211,7 @@ function OrchestraCanvasInner({
 
   const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault()
-    event.dataTransfer.dropEffect = 'copy'
+    event.dataTransfer.dropEffect = 'move'
   }, [])
 
   const handleDrop = useCallback(
