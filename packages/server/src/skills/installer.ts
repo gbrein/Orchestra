@@ -100,12 +100,23 @@ async function installMarketplaceSkill(
 
   const skillDir = join(getSkillsDirectory(), name)
 
-  // Bail out if already installed
-  if (await pathExists(skillDir)) {
-    return { success: false, error: `Skill "${name}" is already installed` }
-  }
-
   try {
+    // If already installed on disk, just ensure the DB record exists
+    if (await pathExists(skillDir)) {
+      const skill = await upsertSkillRecord({
+        name: catalogEntry.name,
+        description: catalogEntry.description,
+        source: 'marketplace',
+        path: skillDir,
+        version: catalogEntry.version,
+        author: catalogEntry.author,
+        category: catalogEntry.category,
+        icon: catalogEntry.icon,
+        mcpConfig: catalogEntry.mcpConfig ?? null,
+      })
+      return { success: true, skill: toSkillDto(skill) }
+    }
+
     await mkdir(skillDir, { recursive: true })
     await writeFile(join(skillDir, 'SKILL.md'), catalogEntry.skillMdContent, 'utf8')
 
