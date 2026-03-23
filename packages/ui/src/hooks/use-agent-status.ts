@@ -1,13 +1,14 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Node } from '@xyflow/react'
-import type { AgentStatus } from '@orchestra/shared'
+import { useEffect, useRef, useState } from 'react'
+import type { AgentStatus, TokenUsage } from '@orchestra/shared'
 import { getSocket } from '@/lib/socket'
 
 interface UseAgentStatusReturn {
-  sessionTokens: number
-  activeAgentIds: ReadonlySet<string>
+  readonly sessionTokens: number
+  readonly activeAgentIds: ReadonlySet<string>
+  /** Increment session token count from external sources (e.g. chain:step_usage) */
+  readonly addTokens: (tokens: number) => void
 }
 
 /**
@@ -15,24 +16,22 @@ interface UseAgentStatusReturn {
  * - Updates node data status when agents start/stop
  * - Accumulates total session token usage for the bottom bar
  * - Tracks which agents are currently active (for edge animation)
+ *
+ * Listeners are re-attached on socket reconnect to ensure no events are missed.
  */
 export function useAgentStatus(
   onNodeStatusChange: (agentId: string, status: AgentStatus) => void,
 ): UseAgentStatusReturn {
   const [sessionTokens, setSessionTokens] = useState(0)
   const [activeAgentIds, setActiveAgentIds] = useState<ReadonlySet<string>>(new Set())
-  const attachedRef = useRef(false)
   const callbackRef = useRef(onNodeStatusChange)
   const deactivateTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
   callbackRef.current = onNodeStatusChange
 
   useEffect(() => {
-    if (attachedRef.current) return
-    attachedRef.current = true
-
     const socket = getSocket()
 
-    socket.on('agent:status', (data: { agentId: string; status: string }) => {
+    const handleStatus = (data: { agentId: string; status: string }) => {
       callbackRef.current(data.agentId, data.status as AgentStatus)
 
       if (data.status === 'running') {
@@ -48,11 +47,13 @@ export function useAgentStatus(
           return next
         })
       }
-    })
+    }
 
-    socket.on('agent:done', (data: { agentId: string; sessionId: string; usage: { inputTokens: number; outputTokens: number } }) => {
+    const handleDone = (data: { agentId: string; sessionId: string; usage: TokenUsage }) => {
       const total = (data.usage?.inputTokens ?? 0) + (data.usage?.outputTokens ?? 0)
-      setSessionTokens((prev) => prev + total)
+      if (total > 0) {
+        setSessionTokens((prev) => prev + total)
+      }
       callbackRef.current(data.agentId, 'idle')
 
       // Deactivate after a delay for visual trail effect
@@ -65,17 +66,38 @@ export function useAgentStatus(
         deactivateTimers.current.delete(data.agentId)
       }, 1500)
       deactivateTimers.current.set(data.agentId, timer)
-    })
-  }, [])
+    }
 
-  // Cleanup timers on unmount
-  useEffect(() => {
+    // Attach listeners — works even if socket isn't connected yet.
+    // Socket.IO queues listeners and fires them once connected.
+    socket.on('agent:status', handleStatus)
+    socket.on('agent:done', handleDone)
+
+    // Re-attach on reconnect to handle cases where the server
+    // restarts and the socket reconnects with a new session.
+    const handleReconnect = () => {
+      socket.off('agent:status', handleStatus)
+      socket.off('agent:done', handleDone)
+      socket.on('agent:status', handleStatus)
+      socket.on('agent:done', handleDone)
+    }
+    socket.io.on('reconnect', handleReconnect)
+
     return () => {
+      socket.off('agent:status', handleStatus)
+      socket.off('agent:done', handleDone)
+      socket.io.off('reconnect', handleReconnect)
       for (const timer of deactivateTimers.current.values()) {
         clearTimeout(timer)
       }
     }
   }, [])
 
-  return { sessionTokens, activeAgentIds }
+  const addTokens = (tokens: number) => {
+    if (tokens > 0) {
+      setSessionTokens((prev) => prev + tokens)
+    }
+  }
+
+  return { sessionTokens, activeAgentIds, addTokens }
 }

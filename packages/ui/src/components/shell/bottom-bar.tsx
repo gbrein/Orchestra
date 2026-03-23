@@ -1,6 +1,6 @@
 'use client'
 
-import { Circle, Wifi, WifiOff, Loader2, ZoomIn, ZoomOut, Maximize } from 'lucide-react'
+import { ZoomIn, ZoomOut, Maximize } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -18,6 +18,15 @@ export interface BottomBarProps {
   readonly onFitView?: () => void
 }
 
+// ─── Cost estimation (rough, based on Sonnet pricing) ───────────────────────
+
+function estimateCost(tokens: number): string {
+  // Approximate: $3/MTok input + $15/MTok output, assume 40/60 split
+  const cost = tokens * 0.000006 + tokens * 0.000009
+  if (cost < 0.01) return '<$0.01'
+  return `$${cost.toFixed(2)}`
+}
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export function BottomBar({
@@ -31,98 +40,51 @@ export function BottomBar({
   onZoomOut,
   onFitView,
 }: BottomBarProps) {
-  const connectionLabel = connecting
-    ? 'Connecting…'
-    : connected
-      ? 'Connected'
-      : socketError
-        ? 'Connection error'
-        : 'Disconnected'
-
   return (
-    <footer className="flex h-8 shrink-0 items-center justify-between border-t bg-card px-4 text-xs text-muted-foreground">
-      {/* Left: Status */}
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1.5">
-          <Circle
-            className={cn(
-              'h-2 w-2 fill-current',
-              connected
-                ? 'text-[var(--status-running)]'
-                : socketError
-                  ? 'text-[var(--status-error)]'
-                  : 'text-[var(--status-idle)]',
-            )}
-            aria-hidden
-          />
-          <span>
-            {connected
-              ? 'Ready'
-              : socketError
-                ? 'Error'
-                : connecting
-                  ? 'Connecting'
-                  : 'Offline'}
-          </span>
-        </div>
-
-        <div
-          className="flex items-center gap-1.5"
-          aria-label={connectionLabel}
-          title={socketError ?? undefined}
-        >
-          {connecting ? (
-            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-          ) : connected ? (
-            <Wifi className="h-3 w-3" aria-hidden />
-          ) : (
-            <WifiOff className="h-3 w-3" aria-hidden />
+    <footer className="flex h-7 shrink-0 items-center justify-between border-t bg-card px-4 text-[11px] text-muted-foreground">
+      {/* Left: Single connection indicator */}
+      <div className="flex items-center gap-1.5">
+        <span
+          className={cn(
+            'h-1.5 w-1.5 rounded-full',
+            connecting
+              ? 'animate-pulse bg-amber-400'
+              : connected
+                ? 'bg-green-400'
+                : 'bg-red-400',
           )}
-          <span>{connectionLabel}</span>
-        </div>
+        />
+        <span>
+          {connecting ? 'Connecting' : connected ? 'Connected' : socketError ? 'Error' : 'Offline'}
+        </span>
       </div>
 
-      {/* Center: Agent count + session cost */}
+      {/* Center: Workflow context */}
       <div className="flex items-center gap-3">
-        <span>
-          {runningAgentCount === 0
-            ? '0 assistants running'
-            : `${runningAgentCount} assistant${runningAgentCount > 1 ? 's' : ''} running`}
-        </span>
-        <span aria-hidden>·</span>
-        <span>{sessionTokens.toLocaleString()} tokens</span>
+        {runningAgentCount > 0 && (
+          <span>{runningAgentCount} running</span>
+        )}
+        {sessionTokens > 0 && (
+          <>
+            {runningAgentCount > 0 && <span className="text-muted-foreground/40">|</span>}
+            <span>{sessionTokens.toLocaleString()} tokens ({estimateCost(sessionTokens)})</span>
+          </>
+        )}
+        {runningAgentCount === 0 && sessionTokens === 0 && (
+          <span>Ready</span>
+        )}
       </div>
 
       {/* Right: Zoom controls */}
       <div className="flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 w-6 p-0"
-          aria-label="Zoom out"
-          onClick={onZoomOut}
-        >
+        <Button variant="ghost" size="sm" className="h-5 w-5 p-0" aria-label="Zoom out" onClick={onZoomOut}>
           <ZoomOut className="h-3 w-3" aria-hidden />
         </Button>
-        <span className="w-10 text-center" aria-label={`Zoom level ${zoomLevel} percent`}>
-          {zoomLevel}%
-        </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 w-6 p-0"
-          aria-label="Zoom in"
-          onClick={onZoomIn}
-        >
+        <span className="w-9 text-center">{zoomLevel}%</span>
+        <Button variant="ghost" size="sm" className="h-5 w-5 p-0" aria-label="Zoom in" onClick={onZoomIn}>
           <ZoomIn className="h-3 w-3" aria-hidden />
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 w-6 p-0"
-          aria-label="Fit canvas to view"
-          onClick={onFitView}
-        >
+        <Button variant="ghost" size="sm" className="h-5 w-5 p-0" aria-label="Fit to view" onClick={onFitView}>
           <Maximize className="h-3 w-3" aria-hidden />
         </Button>
       </div>

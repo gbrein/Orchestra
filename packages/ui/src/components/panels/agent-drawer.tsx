@@ -816,27 +816,21 @@ function AdvancedTab({
 // Main Component
 // ---------------------------------------------------------------------------
 
-const ALL_TABS = ['settings', 'skills', 'memory', 'mcp', 'safety', 'conversations', 'advanced'] as const
+const ALL_TABS = ['configure', 'capabilities', 'safety', 'history'] as const
 type DrawerTab = (typeof ALL_TABS)[number]
 
 const TAB_LABELS: Record<DrawerTab, string> = {
-  settings: 'Settings',
-  skills: 'Skills',
-  memory: 'Memory',
-  mcp: 'MCP',
+  configure: 'Configure',
+  capabilities: 'Capabilities',
   safety: 'Safety',
-  conversations: 'Convos',
-  advanced: 'Advanced',
+  history: 'History',
 }
 
 const TAB_MIN_TIER: Record<DrawerTab, 'simple' | 'standard' | 'full'> = {
-  settings: 'simple',
-  skills: 'simple',
-  memory: 'standard',
+  configure: 'simple',
+  capabilities: 'simple',
   safety: 'standard',
-  conversations: 'standard',
-  mcp: 'full',
-  advanced: 'full',
+  history: 'standard',
 }
 
 const TIER_ORDER = { simple: 0, standard: 1, full: 2 } as const
@@ -856,12 +850,12 @@ export function AgentDrawer({
   onMcpToggle,
   onOpenMcpManagement,
 }: AgentDrawerProps) {
-  const [activeTab, setActiveTab] = useState<DrawerTab>('settings')
+  const [activeTab, setActiveTab] = useState<DrawerTab>('configure')
   const { tier } = useComplexity()
   const visibleTabs = ALL_TABS.filter((tab) => TIER_ORDER[tier] >= TIER_ORDER[TAB_MIN_TIER[tab]])
 
   useEffect(() => {
-    if (agent) setActiveTab('settings')
+    if (agent) setActiveTab('configure')
   }, [agent?.id])
 
   return (
@@ -926,22 +920,20 @@ export function AgentDrawer({
               </TabsList>
 
               <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
-                <TabsContent value="settings" className="mt-0">
+                {/* Configure = Settings + Advanced merged */}
+                <TabsContent value="configure" className="mt-0">
                   <SettingsTab agent={agent} onSave={onSave} />
+                  <Separator className="my-4" />
+                  <AdvancedTab agent={agent} onSave={onSave} />
                 </TabsContent>
 
-                <TabsContent value="skills" className="mt-0">
+                {/* Capabilities = Skills + MCP merged */}
+                <TabsContent value="capabilities" className="mt-0">
                   <SkillsTab
                     agentId={agent.id}
                     onOpenMarketplace={onOpenMarketplace ?? (() => undefined)}
                   />
-                </TabsContent>
-
-                <TabsContent value="memory" className="mt-0">
-                  <AgentMemoryTab agentId={agent.id} />
-                </TabsContent>
-
-                <TabsContent value="mcp" className="mt-0">
+                  <Separator className="my-4" />
                   <McpTab
                     agentId={agent.id}
                     mcpServers={mcpServers}
@@ -953,16 +945,16 @@ export function AgentDrawer({
                   />
                 </TabsContent>
 
+                {/* Safety (standalone) */}
                 <TabsContent value="safety" className="mt-0">
                   <SafetyTab agent={agent} onSave={onSave} />
                 </TabsContent>
 
-                <TabsContent value="conversations" className="mt-0">
+                {/* History = Memory + Conversations merged */}
+                <TabsContent value="history" className="mt-0">
+                  <AgentMemoryTab agentId={agent.id} />
+                  <Separator className="my-4" />
                   <ConversationsTab agentId={agent.id} />
-                </TabsContent>
-
-                <TabsContent value="advanced" className="mt-0">
-                  <AdvancedTab agent={agent} onSave={onSave} />
                 </TabsContent>
               </div>
             </Tabs>

@@ -6,6 +6,8 @@ import type { AgentStatus, AgentMode } from '@orchestra/shared'
 // ─── Node data types ───────────────────────────────────────────────────────
 // React Flow v12 requires data to extend Record<string, unknown>
 
+export type ChainNodeState = 'pending' | 'active' | 'completed' | 'error' | undefined
+
 export interface AgentNodeData extends Record<string, unknown> {
   name: string
   description?: string
@@ -14,6 +16,10 @@ export interface AgentNodeData extends Record<string, unknown> {
   model?: string
   purpose?: string
   permissionMode?: AgentMode
+  /** Visual state during chain execution */
+  chainState?: ChainNodeState
+  /** Whether this agent has an active scheduled task */
+  hasSchedule?: boolean
 }
 
 export interface SkillNodeData extends Record<string, unknown> {

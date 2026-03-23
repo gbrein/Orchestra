@@ -430,202 +430,44 @@ export function WorkflowChat({
     <div className="flex h-full flex-col bg-background">
       {/* Header */}
       <header className="shrink-0 border-b border-border px-4 py-3">
+        {/* Title + status */}
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-green-500/10 text-green-500">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-500/10 text-green-500">
             <GitBranch className="h-4 w-4" aria-hidden />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold">Workflow</p>
-            <div className="mt-0.5 flex items-center gap-1.5">
-              <Badge
-                variant={isRunning ? 'default' : 'secondary'}
-                className="gap-1 text-[10px]"
-              >
-                {isRunning && <Loader2 className="h-2.5 w-2.5 animate-spin" aria-hidden />}
-                {isRunning ? 'Running' : 'Idle'}
-              </Badge>
-              <span className="text-[10px] text-muted-foreground">
-                {steps.length} steps
-              </span>
-            </div>
+            <p className="text-sm font-semibold">Execution Log</p>
+            <span className="text-[10px] text-muted-foreground">
+              {steps.length} steps {isRunning ? '— running' : ''}
+            </span>
           </div>
-          {/* Maestro toggle — prominent in header */}
-          <button
-            type="button"
-            className={cn(
-              'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all border',
-              maestroEnabled
-                ? 'bg-purple-500/20 text-purple-400 border-purple-500/40 shadow-[0_0_8px_rgba(168,85,247,0.15)]'
-                : 'bg-muted text-muted-foreground border-border hover:text-foreground hover:border-muted-foreground/50',
-            )}
-            onClick={() => onMaestroToggle(!maestroEnabled)}
-            disabled={isRunning}
-            title={maestroEnabled ? 'Maestro is ON — intelligent orchestration between steps' : 'Maestro is OFF — linear execution'}
-          >
-            <Bot className="h-3.5 w-3.5" aria-hidden />
-            Maestro
-            <span className={cn(
-              'inline-block h-2 w-2 rounded-full transition-colors',
-              maestroEnabled ? 'bg-purple-400 shadow-[0_0_4px_rgba(168,85,247,0.5)]' : 'bg-muted-foreground/40',
-            )} />
-          </button>
-        </div>
-
-        {/* Mode toggle */}
-        <div className="mt-2 border-t border-border pt-2">
           <ModeToggle mode={mode} onChange={onModeChange} disabled={isRunning} />
-        </div>
-
-        {/* Action bar */}
-        <div className="mt-2 flex items-center gap-1">
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+            className="h-7 w-7 p-0 text-muted-foreground"
             onClick={onClearLog}
             aria-label="Clear log"
           >
             <Trash2 className="h-3 w-3" aria-hidden />
-            Clear
-          </Button>
-          <div className="flex-1" />
-          <select
-            value={advisorModel}
-            onChange={(e) => onAdvisorModelChange(e.target.value)}
-            className="h-7 rounded-md border border-border bg-background px-1.5 text-[10px] text-muted-foreground"
-            disabled={isRunning || advisorRunning}
-            aria-label="Advisor model"
-          >
-            <option value="claude-haiku-4-5-20251001">Haiku</option>
-            <option value="claude-sonnet-4-6-20250610">Sonnet</option>
-            <option value="claude-opus-4-6-20250610">Opus</option>
-          </select>
-          <Button
-            size="sm"
-            variant="ghost"
-            className={cn(
-              'h-7 gap-1.5 px-2 text-xs',
-              advisorRunning
-                ? 'text-amber-400'
-                : hasCompletedRun
-                  ? 'text-amber-400/80 hover:text-amber-400'
-                  : 'text-muted-foreground',
-            )}
-            disabled={isRunning || !hasCompletedRun || advisorRunning}
-            onClick={() => onAdvisorRequest(advisorModel)}
-            aria-label="Analyze workflow with Advisor"
-            title={!hasCompletedRun ? 'Run the workflow at least once first' : 'Analyze workflow and suggest improvements'}
-          >
-            {advisorRunning ? (
-              <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-            ) : (
-              <Lightbulb className="h-3 w-3" aria-hidden />
-            )}
-            Advisor
           </Button>
         </div>
 
         {/* Chain steps overview */}
-        <div className="mt-2 flex flex-wrap items-center gap-1">
-          {steps.map((step, i) => (
-            <div key={step.nodeId} className="flex items-center gap-1">
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium">
-                {step.agentName}
-              </span>
-              {i < steps.length - 1 && (
-                <span className="text-[10px] text-muted-foreground">&rarr;</span>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Working Directory */}
-        <div className="mt-2 border-t border-border pt-2">
-          {!hasWorkspace ? (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <FolderOpen className="h-3 w-3 shrink-0 text-muted-foreground/50" aria-hidden />
-              <span>Select a workspace first to configure project folder</span>
-            </div>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="flex w-full items-center gap-1.5 text-left text-xs hover:text-foreground transition-colors"
-                onClick={() => setDirExpanded((prev) => !prev)}
-              >
-                <FolderOpen className="h-3 w-3 shrink-0 text-amber-400" aria-hidden />
-                <span className="flex-1 truncate font-mono text-muted-foreground">
-                  {workingDirectory || 'No project folder configured'}
+        {steps.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1">
+            {steps.map((step, i) => (
+              <div key={step.nodeId} className="flex items-center gap-1">
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium">
+                  {step.agentName}
                 </span>
-                {dirExpanded ? (
-                  <ChevronUp className="h-3 w-3 text-muted-foreground" aria-hidden />
-                ) : (
-                  <ChevronDown className="h-3 w-3 text-muted-foreground" aria-hidden />
+                {i < steps.length - 1 && (
+                  <span className="text-[10px] text-muted-foreground">&rarr;</span>
                 )}
-              </button>
-              {dirExpanded && (
-                <div className="mt-1.5 flex flex-col gap-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <Input
-                      value={dirInput}
-                      onChange={(e) => {
-                        setDirInput(e.target.value)
-                        setDirSaved(false)
-                      }}
-                      placeholder="/path/to/your/project"
-                      className="h-7 flex-1 font-mono text-xs"
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 shrink-0 gap-1 px-2 text-[10px]"
-                      onClick={() => setFolderPickerOpen(true)}
-                    >
-                      <FolderOpen className="h-3 w-3" />
-                      Browse
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 w-7 shrink-0 p-0"
-                      disabled={dirSaving || (dirInput === (workingDirectory ?? ''))}
-                      onClick={async () => {
-                        setDirSaving(true)
-                        try {
-                          onWorkingDirectoryChange?.(dirInput.trim() || null)
-                          setDirSaved(true)
-                          setTimeout(() => setDirSaved(false), 2000)
-                        } finally {
-                          setDirSaving(false)
-                        }
-                      }}
-                      aria-label="Save working directory"
-                    >
-                      {dirSaving ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : dirSaved ? (
-                        <Check className="h-3 w-3 text-green-500" />
-                      ) : (
-                        <Save className="h-3 w-3" />
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              )}
-              <FolderPicker
-                open={folderPickerOpen}
-                onOpenChange={setFolderPickerOpen}
-                initialPath={dirInput || workingDirectory}
-                onSelect={(path) => {
-                  setDirInput(path)
-                  onWorkingDirectoryChange?.(path)
-                  setDirSaved(true)
-                  setTimeout(() => setDirSaved(false), 2000)
-                }}
-              />
-            </>
-          )}
-        </div>
+              </div>
+            ))}
+          </div>
+        )}
       </header>
 
       {/* Log */}
