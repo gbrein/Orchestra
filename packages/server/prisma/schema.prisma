@@ -451,3 +451,30 @@ model ChainStepResult {
 
   @@index([chainRunId])
 }
+
+model SavedWorkflow {
+  id          String   @id @default(uuid())
+  name        String
+  description String   @default("")
+  workflow    Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ScheduledTask {
+  id              String    @id @default(uuid())
+  name            String
+  description     String    @default("")
+  type            String    // 'workflow' | 'agent'
+  targetId        String    // SavedWorkflow.id or Agent.id
+  message         String    @default("")
+  schedule        String    // cron expression e.g. "0 9 * * 1-5"
+  timezone        String    @default("UTC")
+  enabled         Boolean   @default(true)
+  maestroEnabled  Boolean   @default(false)
+  lastRunAt       DateTime?
+  nextRunAt       DateTime?
+  lastStatus      String?   // 'success' | 'error' | 'running'
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}

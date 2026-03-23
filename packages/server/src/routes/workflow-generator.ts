@@ -1,0 +1,29 @@
+import type { FastifyInstance } from 'fastify'
+import { z } from 'zod'
+import { WorkflowGenerator } from '../engine/workflow-generator'
+
+const GenerateBodySchema = z.object({
+  description: z.string().min(10, 'Description must be at least 10 characters').max(1000),
+})
+
+export async function workflowGeneratorRoutes(app: FastifyInstance) {
+  const generator = new WorkflowGenerator()
+
+  app.post('/api/workflows/generate', async (request, reply) => {
+    const parsed = GenerateBodySchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: parsed.error.issues[0]?.message ?? 'Invalid input',
+      })
+    }
+
+    try {
+      const workflow = await generator.generate(parsed.data.description)
+      return reply.send({ success: true, data: workflow })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Workflow generation failed'
+      return reply.status(500).send({ success: false, error: message })
+    }
+  })
+}

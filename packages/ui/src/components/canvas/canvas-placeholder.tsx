@@ -1,8 +1,7 @@
 'use client'
 
-import { Bot, MessageSquare, Layout, Sparkles, ArrowRight } from 'lucide-react'
+import { Sparkles, ArrowRight, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
 export interface CanvasPlaceholderProps {
   readonly onCreateAssistant?: () => void
@@ -12,120 +11,96 @@ export interface CanvasPlaceholderProps {
   readonly onDescribe?: (description: string) => void
   readonly onGoToWorkspace?: () => void
   readonly hasExistingCanvas?: boolean
+  readonly isGenerating?: boolean
 }
-
-interface QuickAction {
-  readonly icon: React.ElementType
-  readonly title: string
-  readonly description: string
-  readonly actionKey: keyof Omit<CanvasPlaceholderProps, 'onDescribe'>
-}
-
-const ACTIONS: readonly QuickAction[] = [
-  {
-    icon: Bot,
-    title: 'Create an Assistant',
-    description: 'Build a helper for a specific task',
-    actionKey: 'onCreateAssistant',
-  },
-  {
-    icon: MessageSquare,
-    title: 'Start a Team Discussion',
-    description: 'Multiple assistants brainstorm together',
-    actionKey: 'onStartDiscussion',
-  },
-  {
-    icon: Layout,
-    title: 'Use a Template',
-    description: 'Start with a pre-built setup',
-    actionKey: 'onUseTemplate',
-  },
-  {
-    icon: Sparkles,
-    title: 'Explore Skills',
-    description: 'Add abilities to your assistants',
-    actionKey: 'onExploreSkills',
-  },
-]
 
 export function CanvasPlaceholder({
   onCreateAssistant,
-  onStartDiscussion,
   onUseTemplate,
-  onExploreSkills,
   onDescribe,
   onGoToWorkspace,
   hasExistingCanvas,
+  isGenerating = false,
 }: CanvasPlaceholderProps) {
-  const callbacks: Record<string, (() => void) | undefined> = {
-    onCreateAssistant,
-    onStartDiscussion,
-    onUseTemplate,
-    onExploreSkills,
-  }
   return (
     <div className="flex h-full items-center justify-center bg-background">
-      <div className="flex max-w-lg flex-col items-center gap-8 text-center">
+      <div className="flex w-full max-w-xl flex-col items-center gap-6 px-4 text-center">
+        {/* Title */}
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Welcome to Orchestra</h1>
+          <h1 className="text-3xl font-bold tracking-tight">
+            What do you want to build?
+          </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            What would you like to do?
+            Describe your task and Orchestra will create a team of AI agents to accomplish it.
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          {ACTIONS.map((action) => (
-            <Card
-              key={action.title}
-              className="cursor-pointer transition-colors hover:border-primary/50 hover:bg-accent"
-              role="button"
-              tabIndex={0}
-              aria-label={action.title}
-              onClick={() => callbacks[action.actionKey]?.()}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  callbacks[action.actionKey]?.()
-                }
-              }}
+        {/* Hero input — primary CTA */}
+        <form
+          className="w-full"
+          onSubmit={(e) => {
+            e.preventDefault()
+            const input = e.currentTarget.querySelector('input') as HTMLInputElement
+            const value = input?.value.trim()
+            if (value) {
+              onDescribe?.(value)
+              if (input) input.value = ''
+            }
+          }}
+        >
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Sparkles className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+              <input
+                type="text"
+                placeholder="Build a REST API for a todo app with tests and code review..."
+                className="h-11 w-full rounded-lg border bg-background pl-10 pr-4 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+                aria-label="Describe what you want to build"
+                disabled={isGenerating}
+              />
+            </div>
+            <Button
+              type="submit"
+              disabled={isGenerating}
+              className="h-11 px-5"
             >
-              <CardHeader className="p-4">
-                <action.icon className="mb-2 h-6 w-6 text-primary" aria-hidden />
-                <CardTitle className="text-sm">{action.title}</CardTitle>
-                <CardDescription className="text-xs">{action.description}</CardDescription>
-              </CardHeader>
-            </Card>
-          ))}
-        </div>
+              {isGenerating ? (
+                <>
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />
+                  Generating...
+                </>
+              ) : (
+                'Go'
+              )}
+            </Button>
+          </div>
+        </form>
 
-        <div className="w-full">
-          <p className="mb-2 text-xs text-muted-foreground">Or describe what you need:</p>
-          <form
-            className="flex gap-2"
-            onSubmit={(e) => {
-              e.preventDefault()
-              const input = e.currentTarget.querySelector('input') as HTMLInputElement
-              const value = input?.value.trim()
-              if (value) {
-                onDescribe?.(value)
-                if (input) input.value = ''
-              }
-            }}
+        {/* Secondary actions */}
+        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+          <span>or</span>
+          <button
+            type="button"
+            className="underline underline-offset-2 transition-colors hover:text-foreground"
+            onClick={onUseTemplate}
           >
-            <input
-              type="text"
-              placeholder="I need help analyzing my sales data..."
-              className="flex-1 rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              aria-label="Describe what you need"
-            />
-            <Button type="submit" size="sm">Go</Button>
-          </form>
+            Use a Template
+          </button>
+          <span className="text-border">|</span>
+          <button
+            type="button"
+            className="underline underline-offset-2 transition-colors hover:text-foreground"
+            onClick={onCreateAssistant}
+          >
+            Create an Assistant
+          </button>
         </div>
 
+        {/* Continue to workspace */}
         {hasExistingCanvas && onGoToWorkspace && (
           <Button
             variant="outline"
-            className="gap-2"
+            className="mt-2 gap-2"
             onClick={onGoToWorkspace}
           >
             Continue to your workspace
