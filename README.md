@@ -5,6 +5,11 @@ Build AI agent teams visually. Describe what you need, and Orchestra creates a t
 ![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Node.js](https://img.shields.io/badge/node-18%2B-green.svg)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)
+![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
+
+<p align="center">
+  <img src="docs/images/hero-canvas.png" alt="Orchestra — Visual agent orchestration canvas" width="100%" />
+</p>
 
 ---
 
@@ -61,59 +66,24 @@ On first visit, create a local account (email/password). Then just describe what
 
 ## How It Works
 
-```
-  "Build a REST API for a todo app with tests"
-                    |
-                    v
-        +---------------------+
-        | Workflow Generator   |  AI creates 2-5 specialized agents
-        +---------------------+
-                    |
-                    v
-        +---------------------+
-        |   Review & Edit     |  Adjust agents, models, skills
-        +---------------------+
-                    |
-                    v
-        +---------------------+
-        |   Run on Canvas     |  Agents execute as a visual pipeline
-        +---------------------+
-                    |
-                    v
-        +---------------------+
-        |   Advisor Analyzes  |  Suggests improvements for next time
-        +---------------------+
-```
+<p align="center">
+  <img src="docs/images/template-gallery.png" alt="Template gallery — start from pre-built workflows" width="80%" />
+</p>
+
+1. **Describe** what you need in plain English — or pick a template
+2. **Review** the AI-generated team of agents with their models and skills
+3. **Run** the workflow on the visual canvas — watch agents execute in real time
+4. **Improve** with Advisor analysis and suggestions after each run
 
 ---
 
-## What You Can Do
+## Visual Canvas
 
-### Describe and Build
-Type what you need on the home screen. Orchestra uses AI to create a complete workflow with the right agents, personas, models, and skills. Review everything in a dialog before adding to the canvas.
+<p align="center">
+  <img src="docs/images/execution-feedback.png" alt="Workflow execution with live status feedback" width="80%" />
+</p>
 
-### Visual Canvas
 Drag agents, skills, and policies onto an interactive canvas. Connect them with edges to define execution flow. Everything auto-saves.
-
-### Smart Execution
-- **Planner** reviews your workflow before running and suggests optimizations
-- **Maestro** orchestrates between steps, contextualizing output for the next agent
-- **Advisor** analyzes completed runs and suggests improvements
-
-### Schedule Recurring Tasks
-Set agents or workflows to run on a schedule (e.g., "code review every weekday at 9am"). Presets make it easy, or use custom cron expressions.
-
-### Team Discussions
-Multiple agents brainstorm, review, or debate a topic together. An automated facilitator manages turn order and synthesizes conclusions.
-
-### Safety First
-Three layers of policies (global, per-agent, per-session) control what agents can do. Risky commands require your approval before executing. Budget limits prevent runaway costs.
-
----
-
-## The Canvas
-
-The canvas is where you build. It supports:
 
 | Feature | Details |
 |---------|---------|
@@ -126,7 +96,13 @@ The canvas is where you build. It supports:
 
 ---
 
-## Agent Models
+## Agent Configuration
+
+<p align="center">
+  <img src="docs/images/agent-drawer.png" alt="Agent configuration panel" width="80%" />
+</p>
+
+Each agent has a model, persona, skills, memory, and MCP connections — all configurable from the side panel.
 
 | Tier | Best for | Cost |
 |------|----------|------|
@@ -135,6 +111,30 @@ The canvas is where you build. It supports:
 | **Haiku** (Quick Helper) | Simple chat, formatting, high-volume tasks | ~$0.005/msg |
 
 The Workflow Generator picks the right model for each agent automatically. You can always change it.
+
+---
+
+## Team Discussions
+
+<p align="center">
+  <img src="docs/images/discussion-panel.png" alt="Multi-agent team discussion" width="80%" />
+</p>
+
+Multiple agents brainstorm, review, or debate a topic together. An automated facilitator manages turn order and synthesizes conclusions.
+
+---
+
+## Smart Execution
+
+- **Planner** reviews your workflow before running and suggests optimizations
+- **Maestro** orchestrates between steps, contextualizing output for the next agent
+- **Advisor** analyzes completed runs and suggests improvements
+
+---
+
+## Schedule Recurring Tasks
+
+Set agents or workflows to run on a schedule (e.g., "code review every weekday at 9am"). Presets make it easy, or use custom cron expressions.
 
 ---
 
@@ -149,6 +149,12 @@ Skills are instruction sets that give agents specialized abilities. Orchestra in
 - **Test Writer** — unit, integration, and edge case coverage
 
 You can also import skills from any Git repository.
+
+---
+
+## Safety First
+
+Three layers of policies (global, per-agent, per-session) control what agents can do. Risky commands require your approval before executing. Budget limits prevent runaway costs.
 
 ---
 
@@ -168,6 +174,7 @@ npm run docker:down      # Stop PostgreSQL
 npm run build            # Build all packages
 npm run lint             # Lint all packages
 npm run test             # Run tests
+npm run screenshots      # Capture README screenshots (requires running app)
 ```
 
 ### Environment Variables
