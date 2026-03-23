@@ -1452,6 +1452,18 @@ export default function Home() {
         openPanel({ type: 'resource-browser' })
         return
       }
+      if (nodeType === 'skill') {
+        openPanel({ type: 'skill-marketplace' })
+        return
+      }
+      if (nodeType === 'policy') {
+        openPanel({ type: 'safety' })
+        return
+      }
+      if (nodeType === 'mcp') {
+        openPanel({ type: 'mcp-management' })
+        return
+      }
 
       if (nodeType !== 'agent') return
 
