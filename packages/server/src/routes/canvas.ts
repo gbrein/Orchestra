@@ -22,6 +22,11 @@ const SaveCanvasSchema = z.object({
 })
 
 export async function canvasRoutes(app: FastifyInstance) {
+  // Detect the server's working directory for onboarding auto-fill
+  app.get('/api/workspaces/detect-directory', async (_req, reply) => {
+    sendSuccess(reply, { directory: process.cwd() })
+  })
+
   app.get('/api/workspaces', async (req, reply) => {
     try {
       const userId = req.user?.id

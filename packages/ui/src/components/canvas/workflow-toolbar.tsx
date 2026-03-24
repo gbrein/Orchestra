@@ -15,6 +15,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
+import { useCoachingStep } from '@/hooks/use-onboarding'
+import { CoachingTooltip } from '@/components/onboarding/coaching-tooltip'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -86,6 +88,7 @@ export function WorkflowToolbar({
   const [showInput, setShowInput] = useState(false)
   const [inputValue, setInputValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const runCoaching = useCoachingStep('runWorkflow')
 
   // Focus input when it appears
   useEffect(() => {
@@ -157,15 +160,22 @@ export function WorkflowToolbar({
           </Button>
         </form>
       ) : (
-        <Button
-          size="sm"
-          className="h-7 gap-1.5 rounded-lg bg-green-600 px-2.5 text-xs text-white hover:bg-green-700"
-          onClick={handleRunClick}
-          aria-label="Run workflow"
+        <CoachingTooltip
+          visible={runCoaching.visible}
+          onDismiss={runCoaching.dismiss}
+          message="Your workflow is ready. Hit Run to execute."
+          side="bottom"
         >
-          <Play className="h-3 w-3 fill-current" aria-hidden />
-          Run
-        </Button>
+          <Button
+            size="sm"
+            className="h-7 gap-1.5 rounded-lg bg-green-600 px-2.5 text-xs text-white hover:bg-green-700"
+            onClick={() => { runCoaching.dismiss(); handleRunClick() }}
+            aria-label="Run workflow"
+          >
+            <Play className="h-3 w-3 fill-current" aria-hidden />
+            Run
+          </Button>
+        </CoachingTooltip>
       )}
 
       {/* ── Step Indicator ── */}

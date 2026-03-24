@@ -149,6 +149,9 @@ async function main() {
   io.on('connection', (socket) => {
     app.log.info(`Client connected: ${socket.id}`)
 
+    // Emit prerequisites status to the client on connect
+    socket.emit('prerequisites' as any, prereqs)
+
     socket.on('disconnect', () => {
       app.log.info(`Client disconnected: ${socket.id}`)
     })

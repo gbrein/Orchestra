@@ -374,6 +374,7 @@ async function handleAgentStart(
       maxBudgetUsd: minDefinedBudget(config.maxBudgetUsd, resolvedPolicy.maxBudgetUsd),
       env: config.env,
       ...(config.addDirs && config.addDirs.length > 0 ? { addDirs: config.addDirs } : {}),
+      verbose: true,
     })
   } catch (err) {
     const sessionId = agentSessionMap.get(agentId) ?? ''

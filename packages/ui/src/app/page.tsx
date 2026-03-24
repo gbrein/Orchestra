@@ -7,6 +7,11 @@ import { Sidebar } from '@/components/shell/sidebar'
 import { TopBar, type TopBarTab } from '@/components/shell/top-bar'
 import { BottomBar } from '@/components/shell/bottom-bar'
 import { CanvasPlaceholder } from '@/components/canvas/canvas-placeholder'
+import { OnboardingWizard, type OnboardingResult } from '@/components/onboarding/onboarding-wizard'
+import { CliMissingBanner } from '@/components/shell/cli-missing-banner'
+import { CoachingToast } from '@/components/onboarding/coaching-toast'
+import { useOnboarding, useCoachingStep } from '@/hooks/use-onboarding'
+import { usePrerequisites } from '@/hooks/use-prerequisites'
 import { AgentCreateDialog } from '@/components/panels/agent-create-dialog'
 import { TemplateGallery } from '@/components/canvas/template-gallery'
 import { CommandPalette } from '@/components/shell/command-palette'
@@ -34,6 +39,7 @@ import { McpManagement, type McpServer } from '@/components/panels/mcp-managemen
 import { ChainConfig, type ChainStep, type ConditionalEdge } from '@/components/panels/chain-config'
 import { PrdEditor, type PrdData } from '@/components/panels/prd-editor'
 import { AssistantsList, type AssistantSummary } from '@/components/panels/assistants-list'
+import { FacilitatorList } from '@/components/panels/facilitator-list'
 import { GlobalSafetyPanel } from '@/components/panels/global-safety-panel'
 import { AgentDrawer } from '@/components/panels/agent-drawer'
 import { QuickRunBar } from '@/components/shell/quick-run-bar'
@@ -77,6 +83,11 @@ export default function Home() {
   const [edges, setEdges] = useState<Edge[]>([])
   // ── Panel manager: one right-side panel at a time ──
   const { panel, openPanel, closePanel, isOpen } = usePanel()
+
+  // ── Onboarding ──
+  const { showWizard, completeWizard } = useOnboarding()
+  const { cliInstalled, loading: cliLoading, recheck: recheckCli } = usePrerequisites()
+  const connectCoaching = useCoachingStep('connectNodes')
 
   // ── Dialog states (modals overlay, don't compete with panels) ──
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
@@ -188,6 +199,7 @@ export default function Home() {
   const {
     notifications,
     unreadCount,
+    addNotification,
     acknowledge,
     acknowledgeAll,
     removeNotification,
@@ -464,6 +476,49 @@ export default function Home() {
     }, 200)
   }, [])
 
+  const handleOnboardingComplete = useCallback(async (result: OnboardingResult) => {
+    completeWizard()
+
+    // Set working directory on the workspace
+    if (result.workingDirectory && activeWorkspaceId) {
+      try {
+        await apiPatch(`/api/workspaces/${activeWorkspaceId}`, {
+          workingDirectory: result.workingDirectory,
+        })
+        setWorkspaceWorkingDir(result.workingDirectory)
+      } catch (err) {
+        console.error('Failed to save working directory:', err)
+      }
+    }
+
+    // Set complexity tier based on work mode
+    const level = result.workMode === 'quick' ? 3 : 7
+    try {
+      localStorage.setItem('orchestra:settings:complexity', JSON.stringify(level))
+      refreshComplexity()
+    } catch {
+      // silent
+    }
+
+    // Execute first action
+    switch (result.firstAction) {
+      case 'describe':
+        if (result.description) {
+          void handleDescribe(result.description)
+        }
+        break
+      case 'template':
+        setTemplateGalleryOpen(true)
+        break
+      case 'create':
+        setCreateAgentOpen(true)
+        break
+      case 'skip':
+      default:
+        break
+    }
+  }, [activeWorkspaceId, completeWizard])
+
   const handleDescribe = useCallback(async (description: string) => {
     setIsGenerating(true)
     try {
@@ -474,8 +529,16 @@ export default function Home() {
       // Open review dialog instead of materializing directly
       setGeneratedWorkflow(workflow)
       setReviewDialogOpen(true)
-    } catch {
-      // Fallback: create a single agent (original behavior)
+    } catch (err) {
+      // Notify user that workflow generation failed before falling back
+      console.error('[handleDescribe] Workflow generation failed:', err)
+      addNotification({
+        level: 'error',
+        title: 'Workflow generation failed',
+        description: 'Could not generate a multi-agent workflow. Creating a simple assistant instead. Check server logs for details.',
+      })
+
+      // Fallback: create a single agent
       const name = description.length > 30 ? description.slice(0, 30) + '...' : description
       try {
         const saved = await apiPost<{ id: string }>('/api/agents', {
@@ -1579,6 +1642,9 @@ export default function Home() {
 
   return (
     <ComplexityContext.Provider value={complexity}>
+    {/* Onboarding Wizard — shown once for first-time users */}
+    <OnboardingWizard open={showWizard} onComplete={handleOnboardingComplete} />
+
     <div className="flex h-screen flex-col overflow-hidden">
       <TopBar
         notifications={notifications}
@@ -1600,6 +1666,11 @@ export default function Home() {
         onSettingsClick={handleSettingsClick}
         activeTab={activeTab}
       />
+      <CliMissingBanner
+        visible={!cliInstalled && !cliLoading}
+        loading={cliLoading}
+        onRecheck={recheckCli}
+      />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           favorites={favoriteAgents}
@@ -1609,6 +1680,7 @@ export default function Home() {
           onAssistantsClick={handleAssistantsClick}
           onSkillsClick={handleToggleMarketplace}
           onSafetyClick={handleSafetyClick}
+          onFacilitatorsClick={() => openPanel({ type: 'facilitators' })}
           onDiscussionsClick={handleSidebarDiscussionsClick}
           onConnectionsClick={handleConnectionsClick}
           onResourcesClick={handleResourcesClick}
@@ -1655,6 +1727,12 @@ export default function Home() {
                 onNodeDoubleClick={handleNodeDoubleClick}
                 onZoomChange={setZoomLevel}
                 activeAgentIds={activeAgentIds}
+              />
+              {/* Coaching: connect nodes hint */}
+              <CoachingToast
+                visible={connectCoaching.visible && nodes.length >= 1 && edges.length === 0}
+                onDismiss={connectCoaching.dismiss}
+                message="Connect assistants by dragging from one handle to another"
               />
             </div>
 
@@ -1705,6 +1783,18 @@ export default function Home() {
           onSelect={handleSelectAssistant}
           onCreateNew={handleCreateAgent}
           onDelete={handleDeleteAssistant}
+        />
+      </ErrorBoundary>
+
+      {/* Facilitator List */}
+      <ErrorBoundary>
+        <FacilitatorList
+          open={isOpen('facilitators')}
+          onOpenChange={(open) => open ? openPanel({ type: 'facilitators' }) : closePanel()}
+          onSelect={(f) => {
+            closePanel()
+            openPanel({ type: 'agent-drawer', agentId: f.id })
+          }}
         />
       </ErrorBoundary>
 

@@ -1,0 +1,148 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { FolderOpen, AlertTriangle, CheckCircle2, RefreshCw, Loader2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { apiGet } from '@/lib/api'
+
+interface HealthResponse {
+  readonly status: string
+  readonly prerequisites: {
+    readonly results: ReadonlyArray<{
+      readonly name: string
+      readonly passed: boolean
+      readonly fix?: string
+    }>
+  }
+}
+
+export interface StepWorkingDirectoryProps {
+  readonly value: string
+  readonly onChange: (value: string) => void
+  readonly onContinue: () => void
+}
+
+export function StepWorkingDirectory({ value, onChange, onContinue }: StepWorkingDirectoryProps) {
+  const [error, setError] = useState<string | null>(null)
+  const [cliInstalled, setCliInstalled] = useState<boolean | null>(null)
+  const [checkingCli, setCheckingCli] = useState(true)
+
+  // Check CLI on mount
+  useEffect(() => {
+    checkCli()
+  }, [])
+
+  async function checkCli() {
+    setCheckingCli(true)
+    try {
+      const health = await apiGet<HealthResponse>('/api/health')
+      const cli = health.prerequisites.results.find((r) => r.name === 'Claude Code CLI')
+      setCliInstalled(cli?.passed ?? false)
+    } catch {
+      setCliInstalled(false)
+    } finally {
+      setCheckingCli(false)
+    }
+  }
+
+  // Auto-detect working directory from server
+  useEffect(() => {
+    if (value) return
+    apiGet<{ directory: string }>('/api/workspaces/detect-directory')
+      .then((res) => {
+        if (res.directory) {
+          onChange(res.directory)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  function handleContinue() {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      setError('A working directory is required for Orchestra to function.')
+      return
+    }
+    setError(null)
+    onContinue()
+  }
+
+  const canContinue = cliInstalled === true && !checkingCli
+
+  return (
+    <div className="flex flex-col items-center gap-6 text-center">
+      <FolderOpen className="h-10 w-10 text-muted-foreground" />
+
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">
+          Where does your code live?
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Orchestra works with your local files through Claude Code.
+          Point it to your project folder.
+        </p>
+      </div>
+
+      {/* CLI status */}
+      <div className="w-full max-w-md">
+        {checkingCli ? (
+          <div className="flex items-center justify-center gap-2 rounded-lg border border-border p-3 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            Checking Claude Code CLI...
+          </div>
+        ) : cliInstalled ? (
+          <div className="flex items-center justify-center gap-2 rounded-lg border border-green-500/20 bg-green-500/5 p-3 text-sm text-green-400">
+            <CheckCircle2 className="h-4 w-4" aria-hidden />
+            Claude Code detected
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2 rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-3">
+            <div className="flex items-center gap-2 text-sm text-yellow-200">
+              <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
+              Claude Code not detected — install it first
+            </div>
+            <p className="text-xs text-yellow-200/70">
+              Run:{' '}
+              <code className="rounded bg-yellow-500/10 px-1 py-0.5 font-mono">
+                npm install -g @anthropic-ai/claude-code
+              </code>
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-1 gap-1.5 text-xs text-yellow-200 hover:bg-yellow-500/20"
+              onClick={checkCli}
+            >
+              <RefreshCw className="h-3 w-3" aria-hidden />
+              Check Again
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Working directory input */}
+      <div className="w-full max-w-md">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => { onChange(e.target.value); setError(null) }}
+          placeholder="/home/user/projects/my-app"
+          className="h-11 w-full rounded-lg border bg-background px-4 font-mono text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+          autoFocus
+          disabled={!canContinue}
+          onKeyDown={(e) => { if (e.key === 'Enter' && canContinue) handleContinue() }}
+        />
+        {error && (
+          <p className="mt-2 text-xs text-destructive">{error}</p>
+        )}
+        <p className="mt-2 text-xs text-muted-foreground">
+          This can be changed later in Workspace settings.
+        </p>
+      </div>
+
+      <Button className="mt-2" onClick={handleContinue} disabled={!canContinue}>
+        Continue
+      </Button>
+    </div>
+  )
+}

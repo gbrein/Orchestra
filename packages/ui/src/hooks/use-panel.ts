@@ -30,6 +30,7 @@ export type ActivePanel =
   | { readonly type: 'plan-editor' }
   | { readonly type: 'git' }
   | { readonly type: 'maestro-drawer' }
+  | { readonly type: 'facilitators' }
 
 export type PanelType = ActivePanel['type']
 

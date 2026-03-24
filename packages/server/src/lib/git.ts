@@ -200,6 +200,20 @@ export async function checkoutBranch(branch: string, cwd?: string): Promise<void
   await runGit(['switch', branch], cwd)
 }
 
+export async function createBranch(name: string, startPoint?: string, cwd?: string): Promise<void> {
+  if (!/^[\w./-]+$/.test(name)) {
+    throw new ValidationError(`Invalid branch name: "${name}"`)
+  }
+  const args = ['switch', '-c', name]
+  if (startPoint) {
+    if (!/^[\w./-]+$/.test(startPoint)) {
+      throw new ValidationError(`Invalid start point: "${startPoint}"`)
+    }
+    args.push(startPoint)
+  }
+  await runGit(args, cwd)
+}
+
 // ─── Remote URL ─────────────────────────────────────────────────────────────
 
 export async function getRemoteUrl(cwd?: string): Promise<string | null> {

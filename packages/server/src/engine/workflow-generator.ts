@@ -44,21 +44,32 @@ export class WorkflowGenerator {
     message: string,
   ): Promise<string> {
     return new Promise<string>((resolve, reject) => {
-      let output = ''
+      let allText = ''      // accumulate ALL text events unconditionally
+      let resultText = ''   // keep the 'result' event content separately
 
       spawner.on('text', (data: { content: string; partial: boolean }) => {
-        if (data.partial) {
-          output += data.content
-        } else {
-          output = data.content
+        allText += data.content
+        if (!data.partial) {
+          // Last non-partial text wins — usually the 'result' event
+          resultText = data.content
         }
       })
 
       spawner.on('completion', () => {
+        // Try sources in order of reliability:
+        // 1. resultText (from 'result' event — usually the complete response)
+        // 2. allText (everything accumulated — may have duplicates but nothing lost)
+        const output = extractJson(resultText) ? resultText
+          : extractJson(allText) ? allText
+          : resultText || allText
+        console.log('[WorkflowGenerator] output length:', output.length,
+          'resultText length:', resultText.length,
+          'allText length:', allText.length)
         resolve(output)
       })
 
       spawner.on('error', (err: Error) => {
+        console.error('[WorkflowGenerator] spawn error:', err.message)
         reject(new Error(`Workflow generation failed: ${err.message}`))
       })
 
@@ -68,9 +79,10 @@ export class WorkflowGenerator {
           sessionId: randomUUID(),
           message,
           systemPrompt,
-          model: 'claude-sonnet-4-5-20250514',
+          model: 'sonnet',
           permissionMode: 'plan',
           maxBudgetUsd: 0.15,
+          verbose: false,
         })
       } catch (err) {
         reject(err instanceof Error ? err : new Error(String(err)))
@@ -137,16 +149,39 @@ You MUST respond with ONLY a JSON object (no markdown, no code fences):
 }`
 }
 
+// ─── JSON Extraction ────────────────────────────────────────────────────────
+
+function extractJson(raw: string): string | null {
+  if (!raw) return null
+  // Strip markdown code fences
+  const stripped = raw.replace(/```(?:json)?\s*/g, '').replace(/```/g, '')
+
+  // Find first { and match balanced braces
+  const start = stripped.indexOf('{')
+  if (start === -1) return null
+
+  let depth = 0
+  for (let i = start; i < stripped.length; i++) {
+    if (stripped[i] === '{') depth++
+    else if (stripped[i] === '}') depth--
+    if (depth === 0) {
+      return stripped.slice(start, i + 1)
+    }
+  }
+  return null
+}
+
 // ─── Response Parsing ───────────────────────────────────────────────────────
 
 function parseGeneratorResponse(raw: string, description: string): GeneratedWorkflow {
-  const jsonMatch = raw.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) {
+  const jsonStr = extractJson(raw)
+  if (!jsonStr) {
+    console.warn('[WorkflowGenerator] no JSON found in output. Raw (first 500 chars):', raw.slice(0, 500))
     return fallbackWorkflow(description)
   }
 
   try {
-    const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>
+    const parsed = JSON.parse(jsonStr) as Record<string, unknown>
 
     const name = typeof parsed.name === 'string' && parsed.name.length > 0
       ? parsed.name
@@ -159,6 +194,7 @@ function parseGeneratorResponse(raw: string, description: string): GeneratedWork
       .filter((a): a is GeneratedAgent => a !== null)
 
     if (agents.length === 0) {
+      console.warn('[WorkflowGenerator] parsed JSON but no valid agents found')
       return fallbackWorkflow(description)
     }
 
@@ -173,8 +209,10 @@ function parseGeneratorResponse(raw: string, description: string): GeneratedWork
       ? parsed.maestroEnabled
       : agents.length >= 3
 
+    console.log('[WorkflowGenerator] parsed workflow:', name, `(${agents.length} agents, ${edges.length} edges)`)
     return { name, agents, edges, maestroEnabled }
-  } catch {
+  } catch (err) {
+    console.error('[WorkflowGenerator] JSON parse error:', err instanceof Error ? err.message : err)
     return fallbackWorkflow(description)
   }
 }

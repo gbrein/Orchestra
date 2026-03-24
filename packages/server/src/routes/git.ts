@@ -143,6 +143,23 @@ export async function gitRoutes(app: FastifyInstance) {
     }
   })
 
+  // Create and switch to a new branch
+  app.post('/api/git/branch', async (req, reply) => {
+    try {
+      const { name, startPoint, workspaceId } = z.object({
+        name: z.string().min(1).max(200),
+        startPoint: z.string().max(200).optional(),
+        workspaceId: z.string().uuid().optional(),
+      }).parse(req.body)
+      const cwd = await resolveGitCwd(workspaceId)
+      await git.createBranch(name, startPoint, cwd)
+      const status = await git.getStatus(cwd)
+      sendSuccess(reply, status, 201)
+    } catch (error) {
+      sendError(reply, error)
+    }
+  })
+
   // Get remote origin URL
   app.get('/api/git/remote', async (req, reply) => {
     try {

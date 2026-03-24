@@ -4,7 +4,7 @@ import { useState } from 'react'
 import {
   Bot, Puzzle, Shield, MessageSquare, Plug, PanelLeftClose, PanelLeft,
   Plus, Home, FolderOpen, Activity, ClipboardList, GitBranch,
-  GripVertical, Clock, Settings, Search,
+  GripVertical, Clock, Settings, Search, UserRoundCog,
 } from 'lucide-react'
 import { DRAG_TYPES } from '@/lib/canvas-utils'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,8 @@ import {
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useComplexity } from '@/hooks/use-complexity'
+import { useCoachingStep } from '@/hooks/use-onboarding'
+import { CoachingTooltip } from '@/components/onboarding/coaching-tooltip'
 import { FavoritesSection } from '@/components/shell/favorites-section'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -37,6 +39,7 @@ export interface SidebarProps {
   readonly onAssistantsClick?: () => void
   readonly onSkillsClick?: () => void
   readonly onSafetyClick?: () => void
+  readonly onFacilitatorsClick?: () => void
   readonly onDiscussionsClick?: () => void
   readonly onConnectionsClick?: () => void
   readonly onResourcesClick?: () => void
@@ -79,6 +82,7 @@ interface NavItem {
 const BROWSE_ITEMS: readonly NavItem[] = [
   { icon: Bot, label: 'Assistants', shortcut: 'N', action: 'assistants', minTier: 'simple' },
   { icon: Puzzle, label: 'Skills', shortcut: 'S', action: 'skills', minTier: 'simple' },
+  { icon: UserRoundCog, label: 'Facilitators', action: 'facilitators', minTier: 'standard' },
   { icon: MessageSquare, label: 'Discussions', action: 'discussions', minTier: 'standard' },
   { icon: Activity, label: 'Activity', action: 'activity', minTier: 'standard' },
   { icon: Clock, label: 'Schedules', action: 'schedules', minTier: 'simple' },
@@ -102,6 +106,7 @@ export function Sidebar({
   onAssistantsClick,
   onSkillsClick,
   onSafetyClick,
+  onFacilitatorsClick,
   onDiscussionsClick,
   onConnectionsClick,
   onResourcesClick,
@@ -114,6 +119,7 @@ export function Sidebar({
 }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const { tier } = useComplexity()
+  const dragCoaching = useCoachingStep('sidebarDrag')
 
   const isVisible = (minTier: 'simple' | 'standard' | 'full') =>
     TIER_ORDER[tier] >= TIER_ORDER[minTier]
@@ -121,12 +127,14 @@ export function Sidebar({
   function handleDragStart(e: React.DragEvent<HTMLElement>, item: DragItem) {
     e.dataTransfer.setData(item.mimeType, JSON.stringify({ type: item.nodeType }))
     e.dataTransfer.effectAllowed = 'all'
+    dragCoaching.dismiss()
   }
 
   const resolveAction = (action: string) => {
     const map: Record<string, (() => void) | undefined> = {
       assistants: onAssistantsClick,
       skills: onSkillsClick,
+      facilitators: onFacilitatorsClick,
       discussions: onDiscussionsClick,
       activity: onActivityClick,
       schedules: onSchedulesClick,
@@ -176,10 +184,17 @@ export function Sidebar({
       {/* ── Drag to Canvas ── */}
       <div className="px-2 pt-3">
         {!collapsed && (
-          <p className="mb-1.5 flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            <GripVertical className="h-3 w-3" aria-hidden />
-            Drag to Canvas
-          </p>
+          <CoachingTooltip
+            visible={dragCoaching.visible}
+            onDismiss={dragCoaching.dismiss}
+            message="Drag assistants and skills onto the canvas to build your team"
+            side="right"
+          >
+            <p className="mb-1.5 flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              <GripVertical className="h-3 w-3" aria-hidden />
+              Drag to Canvas
+            </p>
+          </CoachingTooltip>
         )}
         <div className="flex flex-col gap-0.5">
           {DRAG_ITEMS.filter((item) => isVisible(item.minTier)).map((item) => (
