@@ -6,8 +6,6 @@ const GenerateBodySchema = z.object({
   description: z.string().min(10, 'Description must be at least 10 characters').max(1000),
 })
 
-const GENERATION_TIMEOUT_MS = 60_000
-
 export async function workflowGeneratorRoutes(app: FastifyInstance) {
   const generator = new WorkflowGenerator()
 
@@ -21,18 +19,12 @@ export async function workflowGeneratorRoutes(app: FastifyInstance) {
     }
 
     try {
-      const workflow = await Promise.race([
-        generator.generate(parsed.data.description),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Workflow generation timed out after 60 seconds')), GENERATION_TIMEOUT_MS),
-        ),
-      ])
+      const workflow = await generator.generate(parsed.data.description)
       return reply.send({ success: true, data: workflow })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Workflow generation failed'
-      const isTimeout = message.includes('timed out')
-      console.error('[WorkflowGenerator Route]', isTimeout ? 'TIMEOUT' : 'ERROR', message)
-      return reply.status(isTimeout ? 504 : 500).send({ success: false, error: message })
+      console.error('[WorkflowGenerator Route] ERROR:', message)
+      return reply.status(500).send({ success: false, error: message })
     }
   })
 }

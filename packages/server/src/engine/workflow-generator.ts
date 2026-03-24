@@ -1,9 +1,9 @@
 // WorkflowGenerator — analyzes a natural language task description and generates
 // a complete multi-agent workflow with agents, edges, skills, and layout.
 
-import { ClaudeCodeSpawner } from './spawner'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
 import { SKILL_CATALOG } from '../skills/catalog'
-import { randomUUID } from 'crypto'
 import type {
   GeneratedWorkflow,
   GeneratedWorkflowWithLayout,
@@ -27,67 +27,40 @@ const VALID_SKILL_IDS = new Set(SKILL_CATALOG.map((s) => s.id))
 
 // ─── WorkflowGenerator Class ────────────────────────────────────────────────
 
+const execFileAsync = promisify(execFile)
+
 export class WorkflowGenerator {
   async generate(description: string): Promise<GeneratedWorkflowWithLayout> {
     const systemPrompt = buildSystemPrompt()
     const userMessage = `Task description:\n"${description}"\n\nAnalyze this task and generate a workflow. Respond with JSON only.`
 
-    const spawner = new ClaudeCodeSpawner()
-    const output = await this.spawnAndCollect(spawner, systemPrompt, userMessage)
-    const workflow = parseGeneratorResponse(output, description)
-    return applyLayout(workflow)
-  }
+    const args = [
+      '--print',
+      '--model', 'sonnet',
+      '--system-prompt', systemPrompt,
+      userMessage,
+    ]
 
-  private spawnAndCollect(
-    spawner: ClaudeCodeSpawner,
-    systemPrompt: string,
-    message: string,
-  ): Promise<string> {
-    return new Promise<string>((resolve, reject) => {
-      let allText = ''      // accumulate ALL text events unconditionally
-      let resultText = ''   // keep the 'result' event content separately
+    console.log('[WorkflowGenerator] spawning claude --print (plain text mode)')
 
-      spawner.on('text', (data: { content: string; partial: boolean }) => {
-        allText += data.content
-        if (!data.partial) {
-          // Last non-partial text wins — usually the 'result' event
-          resultText = data.content
-        }
-      })
-
-      spawner.on('completion', () => {
-        // Try sources in order of reliability:
-        // 1. resultText (from 'result' event — usually the complete response)
-        // 2. allText (everything accumulated — may have duplicates but nothing lost)
-        const output = extractJson(resultText) ? resultText
-          : extractJson(allText) ? allText
-          : resultText || allText
-        console.log('[WorkflowGenerator] output length:', output.length,
-          'resultText length:', resultText.length,
-          'allText length:', allText.length)
-        resolve(output)
-      })
-
-      spawner.on('error', (err: Error) => {
-        console.error('[WorkflowGenerator] spawn error:', err.message)
-        reject(new Error(`Workflow generation failed: ${err.message}`))
-      })
-
-      try {
-        spawner.spawn({
-          agentId: `wfgen-${randomUUID().slice(0, 8)}`,
-          sessionId: randomUUID(),
-          message,
-          systemPrompt,
-          model: 'sonnet',
-          permissionMode: 'plan',
-          maxBudgetUsd: 0.15,
-          verbose: false,
-        })
-      } catch (err) {
-        reject(err instanceof Error ? err : new Error(String(err)))
-      }
+    const { stdout, stderr } = await execFileAsync('claude', args, {
+      timeout: 90_000,
+      maxBuffer: 1024 * 1024,
+      env: { ...process.env },
     })
+
+    if (stderr?.trim()) {
+      console.warn('[WorkflowGenerator] stderr:', stderr.slice(0, 200))
+    }
+
+    console.log('[WorkflowGenerator] stdout length:', stdout.length)
+
+    if (!stdout.trim()) {
+      throw new Error('Claude CLI returned empty output')
+    }
+
+    const workflow = parseGeneratorResponse(stdout, description)
+    return applyLayout(workflow)
   }
 }
 
