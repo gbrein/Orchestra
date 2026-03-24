@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { FolderOpen, AlertTriangle, CheckCircle2, RefreshCw, Loader2 } from 'lucide-react'
+import { FolderOpen, AlertTriangle, CheckCircle2, RefreshCw, Loader2, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { FolderPicker } from '@/components/shared/folder-picker'
 import { apiGet } from '@/lib/api'
 
 interface HealthResponse {
@@ -26,6 +27,7 @@ export function StepWorkingDirectory({ value, onChange, onContinue }: StepWorkin
   const [error, setError] = useState<string | null>(null)
   const [cliInstalled, setCliInstalled] = useState<boolean | null>(null)
   const [checkingCli, setCheckingCli] = useState(true)
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   // Check CLI on mount
   useEffect(() => {
@@ -65,6 +67,12 @@ export function StepWorkingDirectory({ value, onChange, onContinue }: StepWorkin
     }
     setError(null)
     onContinue()
+  }
+
+  function handleFolderSelect(path: string) {
+    onChange(path)
+    setError(null)
+    setPickerOpen(false)
   }
 
   const canContinue = cliInstalled === true && !checkingCli
@@ -120,18 +128,29 @@ export function StepWorkingDirectory({ value, onChange, onContinue }: StepWorkin
         )}
       </div>
 
-      {/* Working directory input */}
+      {/* Working directory input + browse */}
       <div className="w-full max-w-md">
-        <input
-          type="text"
-          value={value}
-          onChange={(e) => { onChange(e.target.value); setError(null) }}
-          placeholder="/home/user/projects/my-app"
-          className="h-11 w-full rounded-lg border bg-background px-4 font-mono text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
-          autoFocus
-          disabled={!canContinue}
-          onKeyDown={(e) => { if (e.key === 'Enter' && canContinue) handleContinue() }}
-        />
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => { onChange(e.target.value); setError(null) }}
+            placeholder="/home/user/projects/my-app"
+            className="h-11 flex-1 rounded-lg border bg-background px-4 font-mono text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+            autoFocus
+            disabled={!canContinue}
+            onKeyDown={(e) => { if (e.key === 'Enter' && canContinue) handleContinue() }}
+          />
+          <Button
+            variant="outline"
+            className="h-11 gap-1.5 shrink-0"
+            onClick={() => setPickerOpen(true)}
+            disabled={!canContinue}
+          >
+            <Search className="h-4 w-4" aria-hidden />
+            Browse
+          </Button>
+        </div>
         {error && (
           <p className="mt-2 text-xs text-destructive">{error}</p>
         )}
@@ -143,6 +162,14 @@ export function StepWorkingDirectory({ value, onChange, onContinue }: StepWorkin
       <Button className="mt-2" onClick={handleContinue} disabled={!canContinue}>
         Continue
       </Button>
+
+      {/* Folder picker dialog */}
+      <FolderPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        initialPath={value || null}
+        onSelect={handleFolderSelect}
+      />
     </div>
   )
 }
