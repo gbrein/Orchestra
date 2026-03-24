@@ -60,7 +60,19 @@ npm run docker:down          # stop everything
 
 > **You need:** Docker Desktop only. Node.js is NOT required for Docker mode.
 
-On first visit, create a local account (email/password). Then just describe what you want to build.
+---
+
+## First-Time Setup
+
+On first visit, create a local account (email/password). A guided onboarding wizard walks you through:
+
+1. **Working directory** — point Orchestra to your project folder (auto-detected from terminal)
+2. **Work mode** — choose *Quick Start* (describe tasks, Orchestra handles the rest) or *Full Control* (manual agent teams with skills and safety rules)
+3. **First action** — describe a task, pick a template, or create an assistant from scratch
+
+If Claude Code CLI is not installed, Orchestra shows a banner with installation instructions and blocks the wizard until it's detected.
+
+After setup, contextual coaching tooltips guide you through the canvas interactions (drag, connect, run) — they auto-dismiss after use.
 
 ---
 
@@ -122,6 +134,15 @@ The Workflow Generator picks the right model for each agent automatically. You c
 
 Multiple agents brainstorm, review, or debate a topic together. An automated facilitator manages turn order and synthesizes conclusions.
 
+### Facilitator Management
+
+Facilitators are specialized agents that moderate discussions. You can:
+
+- **Browse & manage** facilitators from the sidebar (Facilitators panel)
+- **Create** new facilitators with tailored moderation personas
+- **Create inline** when setting up a new discussion — no need to leave the wizard
+- **Change** the facilitator of a draft discussion after creation
+
 ---
 
 ## Smart Execution
@@ -129,6 +150,30 @@ Multiple agents brainstorm, review, or debate a topic together. An automated fac
 - **Planner** reviews your workflow before running and suggests optimizations
 - **Maestro** orchestrates between steps, contextualizing output for the next agent
 - **Advisor** analyzes completed runs and suggests improvements
+
+---
+
+## Workflow Generation
+
+Describe a task in plain English and Orchestra generates a multi-agent workflow:
+
+- AI analyzes the task and designs 2–5 specialized agents with personas, models, and skills
+- Review dialog lets you edit agents, connections, and settings before adding to canvas
+- Agents are arranged in a DAG (directed acyclic graph) with topological layout
+- Maestro is auto-enabled for workflows with 3+ agents
+
+If generation fails, an error notification explains what happened instead of silently falling back.
+
+---
+
+## Git Integration
+
+The Git panel provides repository management directly within Orchestra:
+
+- **Repository selector** — view and change the working directory per workspace
+- **Branch management** — switch branches or create new ones inline
+- **Status & staging** — stage/unstage files, view diffs, commit with messages
+- **Push** — push to remote with ahead/behind indicators
 
 ---
 
@@ -211,17 +256,18 @@ orchestra/
 │   │   └── src/
 │   │       ├── app/       # Pages (canvas, login, register)
 │   │       ├── components/
-│   │       │   ├── canvas/ # React Flow canvas, nodes, edges, toolbar
-│   │       │   ├── panels/ # Right-side panels (chat, drawer, marketplace, etc.)
-│   │       │   └── shell/  # Layout (sidebar, top bar, bottom bar)
-│   │       ├── hooks/     # Socket, auth, canvas, resources, notifications
+│   │       │   ├── canvas/     # React Flow canvas, nodes, edges, toolbar
+│   │       │   ├── onboarding/ # First-time wizard, coaching tooltips
+│   │       │   ├── panels/     # Right-side panels (chat, drawer, marketplace, facilitators, etc.)
+│   │       │   └── shell/      # Layout (sidebar, top bar, bottom bar, CLI banner)
+│   │       ├── hooks/     # Socket, auth, canvas, onboarding, prerequisites, notifications
 │   │       └── lib/       # API client, socket client, canvas utilities
 │   │
 │   ├── server/            # Fastify backend
 │   │   ├── prisma/        # Database schema + migrations
 │   │   └── src/
-│   │       ├── engine/    # Spawner, Planner, Maestro, Advisor, Scheduler, Chain Executor
-│   │       ├── routes/    # REST API (agents, skills, policies, schedules, etc.)
+│   │       ├── engine/    # Spawner, Planner, Maestro, Advisor, Scheduler, Chain Executor, Workflow Generator
+│   │       ├── routes/    # REST API (agents, skills, policies, schedules, git, workflows, etc.)
 │   │       ├── socket/    # Real-time event handlers
 │   │       ├── auth/      # Authentication middleware
 │   │       ├── skills/    # Skill catalog + installer
@@ -258,6 +304,8 @@ Browser                       Server                        Claude Code
 - Canvas state auto-saved to PostgreSQL with 2-second debounce
 - Policy resolution: most restrictive always wins
 - One right-side panel open at a time (managed by `usePanel` hook)
+- Prerequisites check on startup — CLI missing is a warning, not a blocker
+- Workflow generation uses balanced-brace JSON extraction for robustness
 
 ---
 
@@ -286,7 +334,7 @@ Orchestra uses friendly language throughout:
 | Policy | Safety Rule |
 | MCP Server | Connection |
 
-Other accessibility features: ARIA labels on all interactive elements, full keyboard navigation, progressive complexity (Simple/Standard/Full modes), and human-readable error messages.
+Other accessibility features: ARIA labels on all interactive elements, full keyboard navigation, progressive complexity (Simple/Standard/Full modes), guided onboarding wizard for first-time users, contextual coaching tooltips, and human-readable error messages.
 
 ---
 

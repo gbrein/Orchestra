@@ -15,18 +15,31 @@ const CreateAgentSchema = z.object({
   memoryEnabled: z.boolean().default(false),
   model: z.string().optional(),
   permissionMode: z.enum(['plan', 'default', 'edit']).default('default'),
+  isFacilitator: z.boolean().default(false),
 })
 
 const UpdateAgentSchema = CreateAgentSchema.partial().extend({
   isFavorite: z.boolean().optional(),
+  isFacilitator: z.boolean().optional(),
 })
 
 export async function agentRoutes(app: FastifyInstance) {
   app.get('/api/agents', async (req, reply) => {
     try {
       const userId = req.user?.id
+      const query = req.query as Record<string, string | undefined>
+      const facilitatorFilter = query.facilitator === 'true' ? true : undefined
+
+      const where: Record<string, unknown> = {}
+      if (userId) {
+        where.OR = [{ userId }, { userId: null }]
+      }
+      if (facilitatorFilter !== undefined) {
+        where.isFacilitator = facilitatorFilter
+      }
+
       const agents = await prisma.agent.findMany({
-        where: userId ? { OR: [{ userId }, { userId: null }] } : undefined,
+        where: Object.keys(where).length > 0 ? where : undefined,
         include: {
           skills: { include: { skill: true } },
         },

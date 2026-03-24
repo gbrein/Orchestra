@@ -139,6 +139,7 @@ model Agent {
   maxIterations   Int          @default(10)
   teamEnabled     Boolean      @default(false)
   isFavorite      Boolean      @default(false)
+  isFacilitator   Boolean      @default(false)
   canvasX         Float        @default(0)
   canvasY         Float        @default(0)
   userId          String?

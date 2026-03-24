@@ -107,6 +107,15 @@ export function CanvasPlaceholder({
             <ArrowRight className="h-4 w-4" />
           </Button>
         )}
+
+        {/* Atmospheric canvas hint — abstract connecting nodes */}
+        <div className="mt-8 flex items-center gap-6 opacity-15" aria-hidden>
+          <span className="h-3 w-3 rounded-full border-2 border-muted-foreground" />
+          <span className="h-0.5 w-6 bg-muted-foreground motion-safe:animate-pulse" />
+          <span className="h-3 w-3 rounded-full border-2 border-muted-foreground" />
+          <span className="h-0.5 w-6 bg-muted-foreground motion-safe:animate-pulse [animation-delay:500ms]" />
+          <span className="h-3 w-3 rounded-full border-2 border-muted-foreground" />
+        </div>
       </div>
     </div>
   )

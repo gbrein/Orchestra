@@ -155,6 +155,38 @@ export async function discussionRoutes(app: FastifyInstance) {
     },
   )
 
+  /**
+   * PATCH /api/discussions/:id/moderator
+   * Change the moderator of a draft discussion.
+   */
+  app.patch<{ Params: { id: string } }>('/api/discussions/:id/moderator', async (req, reply) => {
+    try {
+      const { id: tableId } = req.params
+      const body = z.object({ moderatorId: z.string().min(1) }).parse(req.body)
+
+      const discussion = await prisma.discussionTable.findUnique({ where: { id: tableId } })
+      if (!discussion) throw new NotFoundError('Discussion', tableId)
+
+      if (discussion.status !== 'draft') {
+        throw new ValidationError('Can only change moderator of a draft discussion')
+      }
+
+      const moderator = await prisma.agent.findUnique({ where: { id: body.moderatorId } })
+      if (!moderator) throw new NotFoundError('Agent', body.moderatorId)
+
+      const updated = await prisma.discussionTable.update({
+        where: { id: tableId },
+        data: { moderatorId: body.moderatorId },
+        include: {
+          moderator: { select: { id: true, name: true, avatar: true } },
+        },
+      })
+      sendSuccess(reply, updated)
+    } catch (error) {
+      sendError(reply, error)
+    }
+  })
+
   // ------------------------------------------------------------------
   // Discussion engine control endpoints
   // ------------------------------------------------------------------

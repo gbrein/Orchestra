@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { apiGet } from '@/lib/api'
+import { apiGet, apiPatch } from '@/lib/api'
 import {
   FolderOpen,
   GitBranch,
@@ -10,6 +10,8 @@ import {
   Loader2,
   ArrowUp,
   ArrowDown,
+  Pencil,
+  Check,
 } from 'lucide-react'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
@@ -47,6 +49,9 @@ export function GitPanel({ open, onOpenChange, workspaceId }: GitPanelProps) {
   const [pushing, setPushing] = useState(false)
 
   const [targetDir, setTargetDir] = useState<string | null>(null)
+  const [editingDir, setEditingDir] = useState(false)
+  const [dirInput, setDirInput] = useState('')
+  const [savingDir, setSavingDir] = useState(false)
 
   useEffect(() => {
     if (!open || !workspaceId) {
@@ -60,6 +65,22 @@ export function GitPanel({ open, onOpenChange, workspaceId }: GitPanelProps) {
       })
       .catch(() => {})
   }, [open, workspaceId])
+
+  async function handleSaveDir() {
+    if (!workspaceId || !dirInput.trim()) return
+    setSavingDir(true)
+    try {
+      await apiPatch(`/api/workspaces/${workspaceId}`, { workingDirectory: dirInput.trim() })
+      setTargetDir(dirInput.trim())
+      setEditingDir(false)
+      // Refresh git data for the new directory
+      void Promise.all([refreshStatus(), refreshLog(), refreshBranches()])
+    } catch {
+      // keep editing
+    } finally {
+      setSavingDir(false)
+    }
+  }
 
   const {
     status, log, branches, remoteUrl,
@@ -154,20 +175,78 @@ export function GitPanel({ open, onOpenChange, workspaceId }: GitPanelProps) {
 
         {/* Repository info */}
         <div className="shrink-0 border-b border-border px-4 py-2">
-          <div className="flex items-center gap-1.5 text-xs">
-            <FolderOpen className="h-3.5 w-3.5 shrink-0 text-amber-400" aria-hidden />
-            <span className="truncate font-mono font-medium">
-              {targetDir || 'Server directory (default)'}
-            </span>
-          </div>
-          {remoteUrl && (
+          {editingDir ? (
+            <form
+              className="flex items-center gap-1.5"
+              onSubmit={(e) => { e.preventDefault(); void handleSaveDir() }}
+            >
+              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-amber-400" aria-hidden />
+              <input
+                type="text"
+                value={dirInput}
+                onChange={(e) => setDirInput(e.target.value)}
+                placeholder="/path/to/your/project"
+                className="flex-1 rounded border bg-background px-2 py-0.5 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setEditingDir(false)
+                  }
+                }}
+              />
+              <Button
+                type="submit"
+                size="sm"
+                variant="ghost"
+                className="h-6 w-6 p-0"
+                disabled={savingDir || !dirInput.trim()}
+                aria-label="Save directory"
+              >
+                {savingDir ? (
+                  <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                ) : (
+                  <Check className="h-3 w-3 text-green-400" aria-hidden />
+                )}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-6 w-6 p-0"
+                onClick={() => setEditingDir(false)}
+                aria-label="Cancel editing"
+              >
+                <X className="h-3 w-3" aria-hidden />
+              </Button>
+            </form>
+          ) : (
+            <div className="flex items-center gap-1.5 text-xs">
+              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-amber-400" aria-hidden />
+              <span className="flex-1 truncate font-mono font-medium">
+                {targetDir || 'No repository selected'}
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 w-6 shrink-0 p-0"
+                onClick={() => {
+                  setDirInput(targetDir || '')
+                  setEditingDir(true)
+                }}
+                aria-label="Change repository directory"
+              >
+                <Pencil className="h-3 w-3" aria-hidden />
+              </Button>
+            </div>
+          )}
+          {remoteUrl && !editingDir && (
             <p className="mt-1 truncate text-[10px] text-muted-foreground">
               {remoteUrl.replace(/\.git$/, '').replace(/^https?:\/\//, '').replace(/^git@/, '')}
             </p>
           )}
-          {!targetDir && (
+          {!targetDir && !editingDir && (
             <p className="mt-1 text-[10px] text-muted-foreground/60">
-              Configure a project folder in workspace settings to target a specific repository.
+              Click the edit icon to set a project folder for this workspace.
             </p>
           )}
         </div>
@@ -237,7 +316,14 @@ export function GitPanel({ open, onOpenChange, workspaceId }: GitPanelProps) {
                 />
               )}
               {activeTab === 'log' && <GitLogTab entries={log} />}
-              {activeTab === 'branches' && <GitBranchesTab branches={branches} onCheckout={checkoutBranch} />}
+              {activeTab === 'branches' && (
+                <GitBranchesTab
+                  branches={branches}
+                  onCheckout={checkoutBranch}
+                  workspaceId={workspaceId}
+                  onBranchCreated={handleRefresh}
+                />
+              )}
             </>
           )}
         </div>

@@ -3,7 +3,7 @@ import { promisify } from 'util'
 
 const execFileAsync = promisify(execFile)
 
-interface PrereqResult {
+export interface PrereqResult {
   readonly name: string
   readonly passed: boolean
   readonly message: string
@@ -11,7 +11,7 @@ interface PrereqResult {
   readonly critical: boolean
 }
 
-interface PrerequisitesReport {
+export interface PrerequisitesReport {
   readonly allPassed: boolean
   readonly critical: boolean
   readonly results: readonly PrereqResult[]
@@ -32,8 +32,8 @@ async function checkClaudeCode(): Promise<PrereqResult> {
       name: 'Claude Code CLI',
       passed: false,
       message: 'Claude Code CLI not found in PATH',
-      fix: 'Install Claude Code: https://docs.anthropic.com/en/docs/claude-code',
-      critical: true,
+      fix: 'Install Claude Code: npm install -g @anthropic-ai/claude-code',
+      critical: false,
     }
   }
 }

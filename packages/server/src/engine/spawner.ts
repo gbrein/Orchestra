@@ -17,6 +17,7 @@ export interface SpawnOptions {
   readonly mcpConfig?: MergedMcpConfig
   readonly addDirs?: string[]
   readonly cwd?: string
+  readonly verbose?: boolean
 }
 
 export interface StreamEvent {
@@ -212,7 +213,7 @@ export class ClaudeCodeSpawner extends EventEmitter {
   private buildArgs(options: SpawnOptions): string[] {
     const args: string[] = [
       '--print',
-      '--verbose',
+      ...(options.verbose ? ['--verbose'] : []),
       '--output-format', 'stream-json',
       '--permission-mode', options.permissionMode ?? 'dontAsk',
       '--system-prompt', options.systemPrompt,

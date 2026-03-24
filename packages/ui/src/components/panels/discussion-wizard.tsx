@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useState } from 'react'
-import { Bot, ChevronRight, ChevronLeft, HelpCircle, Plus, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { Bot, ChevronRight, ChevronLeft, HelpCircle, Plus, Trash2, UserRoundCog } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
@@ -18,6 +18,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { apiGet, apiPost } from '@/lib/api'
 import { recommendDiscussionModels } from '@orchestra/shared'
 import type { DiscussionFormat, ParticipantRole, CreateDiscussionInput } from '@orchestra/shared'
 
@@ -223,6 +224,45 @@ function StepTeam({
   readonly agents: readonly DiscussionAgent[]
   readonly onChange: (patch: Partial<WizardState>) => void
 }) {
+  const [facilitators, setFacilitators] = useState<DiscussionAgent[]>([])
+  const [showCreateFacilitator, setShowCreateFacilitator] = useState(false)
+  const [newFacName, setNewFacName] = useState('')
+  const [newFacDesc, setNewFacDesc] = useState('')
+  const [creatingFac, setCreatingFac] = useState(false)
+
+  useEffect(() => {
+    apiGet<DiscussionAgent[]>('/api/agents?facilitator=true')
+      .then(setFacilitators)
+      .catch(() => {})
+  }, [])
+
+  async function handleCreateFacilitator(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newFacName.trim()) return
+    setCreatingFac(true)
+    try {
+      const created = await apiPost<DiscussionAgent>('/api/agents', {
+        name: newFacName.trim(),
+        description: newFacDesc.trim() || undefined,
+        persona: `You are ${newFacName.trim()}, a skilled discussion facilitator. You guide discussions, ensure all participants are heard, synthesize viewpoints, and keep conversations productive and focused.`,
+        purpose: 'general',
+        model: 'sonnet',
+        isFacilitator: true,
+        scope: [],
+        allowedTools: [],
+      })
+      setFacilitators((prev) => [...prev, created])
+      onChange({ facilitatorId: created.id })
+      setShowCreateFacilitator(false)
+      setNewFacName('')
+      setNewFacDesc('')
+    } catch {
+      // silent
+    } finally {
+      setCreatingFac(false)
+    }
+  }
+
   function handleFacilitatorChange(agentId: string) {
     // Remove the facilitator from participants list to avoid duplicates
     const filteredParticipants = state.participants.filter((p) => p.agentId !== agentId)
@@ -275,6 +315,12 @@ function StepTeam({
 
   const canAddMore = agents.some((a) => !usedAgentIds.has(a.id))
 
+  // Combine facilitators with all agents for the dropdown (facilitators first)
+  const facilitatorOptions = [
+    ...facilitators,
+    ...agents.filter((a) => !facilitators.some((f) => f.id === a.id)),
+  ]
+
   return (
     <div className="flex flex-col gap-5">
       <p className="text-sm font-medium text-muted-foreground">Choose your team</p>
@@ -287,25 +333,89 @@ function StepTeam({
         <p className="text-xs text-muted-foreground">
           The facilitator moderates the discussion and produces the final synthesis.
         </p>
-        <select
-          id="facilitator-select"
-          value={state.facilitatorId}
-          onChange={(e) => handleFacilitatorChange(e.target.value)}
-          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          aria-required
-        >
-          <option value="">Select a facilitator…</option>
-          {agents.map((agent) => (
-            <option
-              key={agent.id}
-              value={agent.id}
-              disabled={state.participants.some((p) => p.agentId === agent.id)}
-            >
-              {agent.name}
-              {agent.model ? ` (${agent.model})` : ''}
-            </option>
-          ))}
-        </select>
+        <div className="flex gap-2">
+          <select
+            id="facilitator-select"
+            value={state.facilitatorId}
+            onChange={(e) => handleFacilitatorChange(e.target.value)}
+            className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            aria-required
+          >
+            <option value="">Select a facilitator…</option>
+            {facilitators.length > 0 && (
+              <optgroup label="Facilitators">
+                {facilitators.map((agent) => (
+                  <option
+                    key={agent.id}
+                    value={agent.id}
+                    disabled={state.participants.some((p) => p.agentId === agent.id)}
+                  >
+                    {agent.name}
+                    {agent.model ? ` (${agent.model})` : ''}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            <optgroup label="All Assistants">
+              {agents.filter((a) => !facilitators.some((f) => f.id === a.id)).map((agent) => (
+                <option
+                  key={agent.id}
+                  value={agent.id}
+                  disabled={state.participants.some((p) => p.agentId === agent.id)}
+                >
+                  {agent.name}
+                  {agent.model ? ` (${agent.model})` : ''}
+                </option>
+              ))}
+            </optgroup>
+          </select>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0 gap-1 text-xs"
+            onClick={() => setShowCreateFacilitator(!showCreateFacilitator)}
+          >
+            <UserRoundCog className="h-3.5 w-3.5" />
+            New
+          </Button>
+        </div>
+
+        {/* Inline facilitator creation form */}
+        {showCreateFacilitator && (
+          <form onSubmit={handleCreateFacilitator} className="mt-2 flex flex-col gap-2 rounded-lg border border-dashed border-border p-3">
+            <input
+              type="text"
+              placeholder="Facilitator name"
+              value={newFacName}
+              onChange={(e) => setNewFacName(e.target.value)}
+              className="h-8 rounded-md border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              autoFocus
+            />
+            <input
+              type="text"
+              placeholder="Description (optional)"
+              value={newFacDesc}
+              onChange={(e) => setNewFacDesc(e.target.value)}
+              className="h-8 rounded-md border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <div className="flex gap-2 justify-end">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-xs"
+                onClick={() => setShowCreateFacilitator(false)}
+                disabled={creatingFac}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" className="text-xs" disabled={creatingFac || !newFacName.trim()}>
+                {creatingFac ? 'Creating...' : 'Create & Select'}
+              </Button>
+            </div>
+          </form>
+        )}
       </div>
 
       {/* Participants */}
