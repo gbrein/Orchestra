@@ -151,7 +151,7 @@ export function MaestroDrawer({
           <div className="space-y-2 text-xs text-muted-foreground">
             <div className="flex items-start gap-2">
               <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-purple-400" />
-              <span>Evaluates each agent's output after completion</span>
+              <span>Evaluates each agent&apos;s output after completion</span>
             </div>
             <div className="flex items-start gap-2">
               <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-purple-400" />

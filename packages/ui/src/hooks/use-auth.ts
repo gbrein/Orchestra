@@ -58,6 +58,7 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
   // Check session on mount
   useEffect(() => {
     getSession()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .then((res: any) => {
         const u = res?.data?.user
         if (u) {
@@ -74,6 +75,7 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
     setError(null)
     setLoading(true)
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const res: any = await authSignIn(email, password)
       if (res.error) {
         setError(res.error.message ?? 'Sign in failed')
@@ -94,6 +96,7 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
     setError(null)
     setLoading(true)
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const res: any = await authSignUp(email, password, name)
       if (res.error) {
         setError(res.error.message ?? 'Sign up failed')
