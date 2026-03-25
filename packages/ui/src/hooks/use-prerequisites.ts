@@ -47,8 +47,10 @@ export function usePrerequisites(): UsePrerequisitesReturn {
       setLoading(false)
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     socket.on('prerequisites' as any, handlePrereqs)
     return () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       socket.off('prerequisites' as any, handlePrereqs)
     }
   }, [])

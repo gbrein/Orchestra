@@ -143,7 +143,7 @@ export function AgentMcpTab({
         <div className="flex flex-col gap-1">
           <p className="text-sm font-medium">No MCP servers registered</p>
           <p className="text-xs text-muted-foreground">
-            Add MCP connections to extend this agent's capabilities.
+            Add MCP connections to extend this agent&apos;s capabilities.
           </p>
         </div>
         <Button

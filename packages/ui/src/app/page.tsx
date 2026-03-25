@@ -1387,6 +1387,7 @@ export default function Home() {
       ])
     })
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     socket.on('chain:planner_result', (data: { chainId: string; plan: any }) => {
       if (data.chainId !== workflowChainIdRef.current) return
       setPlannerStatus('done')
@@ -1952,6 +1953,7 @@ export default function Home() {
             canvasY: 0,
             createdAt: '',
             updatedAt: '',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } as any) : null}
           open={isOpen('agent-drawer')}
           onOpenChange={(open) => open ? openPanel({ type: 'agent-drawer', agentId: selectedAgent?.id ?? '' }) : closePanel()}

@@ -16,7 +16,7 @@ export function StepFirstAction({ onAction, onBack, isGenerating = false }: Step
     <div className="flex flex-col items-center gap-6 text-center">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">
-          You're ready.
+          You&apos;re ready.
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
           What would you like to do first?
